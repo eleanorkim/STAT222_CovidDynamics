@@ -1,0 +1,292 @@
+---
+title: "Covid vs Unemployment"
+date: '2024-02-10'
+output: pdf_document
+---
+
+## Data Cleaning 
+
+```{r, message = FALSE}
+# packages
+library(readxl)
+library(stringr)
+library(lubridate)
+library(dplyr)
+library(ggplot2)
+```
+
+```{r, message = FALSE}
+# load in data 
+covid2020_raw <- read.csv("us-counties-2020.csv")
+covid2021_raw <- read.csv("us-counties-2021.csv")
+covid2022_raw <- read.csv("us-counties-2022.csv")
+population_raw <- read_xlsx("PopulationEstimates.xlsx")
+unemployment_raw <- read_xlsx("Unemployment.xlsx")
+```
+
+### Clean Covid Data from 2020 - 2022
+
+Format data according to "Spatial correlations in geographical spreading of COVID‐19 in the United States". 
+
+```{r}
+# are there any NA's?
+print("NA count per column 2020")
+print(sapply(covid2020_raw, function(x) sum(is.na(x))))
+print("NA count per column 2021")
+print(sapply(covid2021_raw, function(x) sum(is.na(x))))
+print("NA count per column 2022")
+print(sapply(covid2022_raw, function(x) sum(is.na(x))))
+```
+
+```{r}
+
+# "starting on February 1 2020, we aggregate the total number of newly infected cases 
+# in a given county over the previous 7 days (including the given day) 
+# and calculate the daily average during this time period."
+
+# I originally made this a function bc i was gonna apply it to all 3 
+# covid datsets, but then I realized I should combine all 3 datasets
+# and then run the function once, so the time in continuous 
+
+create_daily_avg_by_week <- function(df, start_date){
+    # convert fips to string and add leading 0 if needed 
+    # (should be 5 char long)
+    df$fips = as.character(df$fips)
+    df$fips = str_pad(df$fips, width = 5, side = "left", pad = "0")
+    
+    # drop rows that have NA's for fips code
+    df <- df[!is.na(df$fips), ]
+    
+    # Convert the date column to a Date object
+    df$date <- as.Date(df$date, format = "%Y-%m-%d")
+
+    # drop any rows that are recorded before start_date
+    # retain rows recorded on start date
+    df <- df %>% filter(date >= start_date) 
+
+    # Create a week column that increases with every 7 days from the start date
+    df$week <- as.integer(ceiling(as.numeric(df$date - start_date + 1) / 7))
+
+    # Group by FIPS code and week, then summarize cases
+    daily_avg <- df %>% group_by(fips, week) %>%
+        summarize(total_cases = sum(cases), 
+            avg_daily_cases = sum(cases) / 7,
+            total_deaths = sum(deaths),
+            avg_daily_deaths = sum(deaths) / 7, 
+            .groups = 'drop')
+    
+    daily_avg
+}
+
+# combine all into one dataset 
+covid_raw = rbind(covid2020_raw, covid2021_raw, covid2022_raw)
+start_date <- as.Date("2020-01-26")
+covid_daily_avg <- create_daily_avg_by_week(covid_raw, start_date)
+head(covid_daily_avg)
+tail(covid_daily_avg)
+```
+
+### Clean Population Data (from USDA) 2020 - 2022
+
+```{r}
+population <- population_raw[-(1:3), ]
+
+# Set the column names of to be the values of the first row
+colnames(population) <- as.character(unlist(population[1, ]))
+population <- population[-1, ]
+# remove first row of data since it's for entirety of USA
+population <- population[-1, ]
+
+# extract population estimates
+population <- population[, c("FIPStxt", "POP_ESTIMATE_2020", "POP_ESTIMATE_2021", "POP_ESTIMATE_2022")]
+population[, 2:4] <- lapply(population[, 2:4], as.numeric)
+
+# add average population 2020 - 2022 as we define socioeconomic factors as fixed 
+population$avg_pop <- rowMeans(population[, 2:4], na.rm = TRUE)
+
+head(population)
+```
+
+### Clean Unemployment Data (from USDA) 2020 - 2022 
+
+```{r}
+unemployment <- unemployment_raw[-(1:3), ]
+
+# Set the column names of to be the values of the first row
+colnames(unemployment) <- as.character(unlist(unemployment[1, ]))
+unemployment <- unemployment[-1, ]
+# remove first row of data since it's for entirety of USA
+unemployment <-unemployment[-1, ]
+
+# extract unemployment rates 
+unemployment <- unemployment[, c("FIPS_Code", "Unemployment_rate_2020", 
+                                 "Unemployment_rate_2021", "Unemployment_rate_2022",
+                                 "Median_Household_Income_2021", 
+                                 "Med_HH_Income_Percent_of_State_Total_2021")]
+unemployment[, 2:6] <- lapply(unemployment[, 2:6], as.numeric)
+
+# add average unemployment rate 2020 - 2022 as we define socioeconomic factors as fixed 
+unemployment$avg_unemploy_rate <- rowMeans(unemployment[, 2:4], na.rm = TRUE)
+
+head(unemployment)
+```
+
+### Merge "Covid Daily Averages" and "Population" to form "Average Daily Fraction of Population"
+
+```{r}
+# "We then convert this number to the average daily fraction of the population 
+# in each county that was infected during this week 
+# by dividing with the county population." 
+
+covid_daily_avg_pop <- covid_daily_avg %>%
+    left_join(population, by = c("fips" = "FIPStxt")) %>%
+    select(fips, week, total_cases, total_deaths, 
+           avg_daily_cases, avg_daily_deaths, avg_pop)
+
+head(covid_daily_avg_pop)
+```
+
+```{r}
+# counties with no population data 
+fips_no_pop_data <- covid_daily_avg_pop %>%
+  filter(is.na(avg_pop)) %>%
+  pull(fips) %>%
+  unique()
+print(fips_no_pop_data)
+```
+
+
+```{r}
+# "We remove 697 counties with a population less than 10,000 
+# because a small change in the number of cases in a small population 
+# can lead to large fluctuations, which results in a total of 2411 counties"
+
+covid_fract_daily_avg <- covid_daily_avg_pop %>%
+  # Remove rows where avg_pop is less than 10000
+  # or avg_pop is null
+  filter(avg_pop >= 10000, !is.na(avg_pop)) %>%
+  # divide by population
+  mutate(fract_avg_daily_cases = avg_daily_cases / avg_pop,
+         fract_avg_daily_deaths = avg_daily_deaths / avg_pop) %>%
+  select(fips, week, total_cases, total_deaths, 
+           fract_avg_daily_cases, fract_avg_daily_deaths, avg_pop)
+
+head(covid_fract_daily_avg)
+
+```
+
+```{r}
+# how many counties are there?
+length(unique(covid_fract_daily_avg$fips))
+# doesn't match with 2411 counties from paper 
+```
+
+## EDA
+
+### Explore Covid Average Daily Fraction of Population vs Unemployment-related factors on the county level
+
+#### Annual Cases per Capita vs Unemployment-related factors 
+
+```{r}
+# join covid_fract_daily_avg with unemployment
+covid_fract_daily_avg_unemploy <- covid_fract_daily_avg %>%
+    left_join(unemployment, by = c("fips" = "FIPS_Code")) %>%
+    select(-"Unemployment_rate_2020", -"Unemployment_rate_2021", -"Unemployment_rate_2022")
+    # group weeks into years
+
+covid_fract_daily_avg_unemploy$year <- with(covid_fract_daily_avg_unemploy, 
+                                      ifelse(week >= 1 & week <= 48, "2020",
+                                      ifelse(week >= 49 & week <= 101, "2021", "2022")))
+
+covid_fract_daily_avg_unemploy <- covid_fract_daily_avg_unemploy %>% 
+    group_by(year, fips) %>%
+    summarize(annual_cases_per_capita = (sum(total_cases, na.rm = TRUE) / first(avg_pop)),
+              avg_unemploy_rate = first(avg_unemploy_rate),
+              Median_Household_Income_2021 = first(Median_Household_Income_2021), 
+              Med_HH_Income_Percent_of_State_Total_2021 = first(Med_HH_Income_Percent_of_State_Total_2021)) %>%
+    group_by(fips)
+
+tail(covid_fract_daily_avg_unemploy)
+```
+```{r}
+# counties with no unemployment data 
+fips_no_unemploy_data <- covid_fract_daily_avg_unemploy %>%
+  filter(is.na(avg_unemploy_rate) | is.na(Median_Household_Income_2021) |     
+           is.na(Med_HH_Income_Percent_of_State_Total_2021)) %>%
+  pull(fips) %>%
+  unique()
+print(fips_no_unemploy_data)
+```
+
+```{r}
+# unemployment rate for all years 
+
+# filter out counties with no unemployment rate data 
+covid_fract_daily_avg_unemploy_rate <- covid_fract_daily_avg_unemploy %>%
+  filter(!is.na(avg_unemploy_rate))
+
+ggplot(covid_fract_daily_avg_unemploy_rate, 
+       aes(x = avg_unemploy_rate, y = annual_cases_per_capita, color = year)) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Annual Cases per Capita by Unemployment Rate for each County",
+       x = "Unemployment Rate (%)",
+       y = "Annual Cases per Capita",
+       caption = "Data source: [Johns Hopkins, USDA]",
+       color = "Year") +  # Label for the color legend
+  theme(plot.title = element_text(hjust = 0.5)) # Centers the plot title
+```
+
+```{r}
+# unemployment rate for a specific year 
+
+#ggplot(covid_fract_daily_avg_unemploy_rate[covid_fract_daily_avg_unemploy_rate$year == "2022", ], 
+#       aes(x = avg_unemploy_rate, y = annual_cases_per_capita)) +
+ # geom_point() +
+#  theme_minimal() +
+#  labs(title = "Total Cases per Capita by Unemployment Rate for each County",
+#       x = "Unemployment Rate (%)",
+ #      y = "Total Cases per Year",
+ #      caption = "Data source: [Johns Hopkins, USDA]") +
+ # theme(plot.title = element_text(hjust = 0.5)) # Centers the plot title
+
+```
+
+```{r}
+# Median_Household_Income_2021 
+
+# filter out counties with no Median_Household_Income_2021 data 
+covid_fract_daily_avg_income <- covid_fract_daily_avg_unemploy %>%
+  filter(!is.na(Median_Household_Income_2021))
+
+ggplot(covid_fract_daily_avg_income, aes(x = Median_Household_Income_2021,
+                                         y = annual_cases_per_capita, color = year)) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Annual Cases per Capita by Househould Income for each County",
+       x = "Median Household Income ($)",
+       y = "Annual Cases per Capita",
+       caption = "Data source: [Johns Hopkins, USDA]",
+      color = "Year") +  # Label for the color legend
+  theme(plot.title = element_text(hjust = 0.5)) # Centers the plot title
+```
+
+```{r}
+# Med_HH_Income_Percent_of_State_Total_2021
+
+# filter out counties with no Med_HH_Income_Percent_of_State_Total_2021 data 
+covid_fract_daily_avg_income_percent <- covid_fract_daily_avg_unemploy %>%
+  filter(!is.na(Med_HH_Income_Percent_of_State_Total_2021))
+
+ggplot(covid_fract_daily_avg_income_percent,
+       aes(x = Med_HH_Income_Percent_of_State_Total_2021, y = annual_cases_per_capita, color = year)) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Annual Cases per Capita by Relative Househould Income for each County",
+       x = "Median Household Income as a Percentage of State Total",
+       y = "Annual Cases per Capita",
+       caption = "Data source: [Johns Hopkins, USDA]",
+       color = "Year") +
+  theme(plot.title = element_text(hjust = 0.5)) # Centers the plot title
+```
+
