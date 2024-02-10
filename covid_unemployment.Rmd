@@ -46,7 +46,7 @@ print(sapply(covid2022_raw, function(x) sum(is.na(x))))
 
 # I originally made this a function bc i was gonna apply it to all 3 
 # covid datsets, but then I realized I should combine all 3 datasets
-# and then run the function once, so the time in continuous 
+# and then run the function once, so the time is continuous 
 
 create_daily_avg_by_week <- function(df, start_date){
     # convert fips to string and add leading 0 if needed 
