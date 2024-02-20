@@ -12,6 +12,8 @@ library(readxl)
 library(stringr)
 library(dplyr)
 library(geosphere)
+library(sandwich)
+library(lmtest)
 ```
 
 # Prepare county-level data set with population and coordinate points
@@ -530,67 +532,102 @@ for (w in 6:153) {
 cor_lengths_1=cor_lengths_1[6:153]
 cor_lengths_2=cor_lengths_2[6:153]
 list_Cr=list_Cr[6:153]
+```
 
+
+```{r}
 # prepare distance interval column names
 col_names <- paste("r", r_lower, r_upper, sep = "_")
 
-# prepare for date column
+# prepare date column
 dates = unique(county_week$start_date)
 dates = as.Date(dates)
 sorted_dates <- dates[order(dates)]
 date_names = as.character(sorted_dates)[6:153]
+
+# prepare total new cases column
+total_cases_by_week <- county_week %>%
+  group_by(week) %>%
+  summarize(total_cases = sum(total_cases, na.rm = TRUE))
+total_cases = total_cases_by_week[6:153,2]
+head(county_week)
 ```
 
 ```{r}
 # Create dataframe
-df <- data.frame(matrix(NA, nrow = length(list_Cr), ncol = 51))
+weekly_spatial_metrics <- data.frame(matrix(NA, nrow = length(list_Cr), ncol = 53))
 
-colnames(df)[1] <- "week_start_date"
-colnames(df)[2:49] <- as.character(col_names)
-colnames(df)[50:51] <- c("cor_lengths_1", "cor_lengths_2")
+colnames(weekly_spatial_metrics)[1:3] <- c("week_start_date", "total_cases", "marginal_cases")
+colnames(weekly_spatial_metrics)[4:51] <- as.character(col_names)
+colnames(weekly_spatial_metrics)[52:53] <- c("cor_lengths_1", "cor_lengths_2")
 
 # Fill in first column with dates
-df[, "week_start_date"] <- date_names
+weekly_spatial_metrics[, "week_start_date"] <- date_names
+weekly_spatial_metrics[, "total_cases"] <- total_cases
+weekly_spatial_metrics[, "marginal_cases"] <- c(0, diff(weekly_spatial_metrics$total_cases))
 
 
 # Fill the data frame with list_Cr values
 for (i in seq_along(list_Cr)) {
-  df[i, 2:49] <- unlist(list_Cr[[i]])
+  weekly_spatial_metrics[i, 4:51] <- unlist(list_Cr[[i]])
 }
 
 # Fill the last two columns with cor_lengths_1 and cor_lengths_2
-df[, "cor_lengths_1"] <- cor_lengths_1
-df[, "cor_lengths_2"] <- cor_lengths_2
+weekly_spatial_metrics[, "cor_lengths_1"] <- cor_lengths_1
+weekly_spatial_metrics[, "cor_lengths_2"] <- cor_lengths_2
 
-head(df)
+weekly_spatial_metrics <- weekly_spatial_metrics %>%
+  mutate(next_week_marginal_cases = lead(marginal_cases))
+head(weekly_spatial_metrics)
+nrow(weekly_spatial_metrics)
 
 # save to csv
-write.csv(df, "weekly_spatial_metrics")
-
+write.csv(weekly_spatial_metrics, "weekly_spatial_metrics.csv")
 ```
+
+Output: weekly_spatial_metrics
+- Weekly data set with corresponding covid cases, spatial correlations, and correlation lengths
+- 148 rows (weeks) x 54 columns (date, cases, distance intervals)
+- features: start date of week, total cases, marginal cases, next week's marginal cases, distance intervals from [0,50] to [970,1000], correlation length 
+
 ```{r}
 # some quick analysis
-cor(df$r_0_50, df$cor_lengths_1)
-cor(df$r_0_50, df$cor_lengths_2, use = "complete.obs")
-cor(df$cor_lengths_1, df$cor_lengths_2, use = "complete.obs")
+cor(weekly_spatial_metrics$r_0_50, weekly_spatial_metrics$cor_lengths_1)
+cor(weekly_spatial_metrics$r_0_50, weekly_spatial_metrics$cor_lengths_2, use = "complete.obs")
+cor(weekly_spatial_metrics$cor_lengths_1, weekly_spatial_metrics$cor_lengths_2, use = "complete.obs")
 
-# Scatter plot for cor(df$r_0_50, df$cor_lengths_1)
-plot(df$r_0_50, df$cor_lengths_1, xlab = "r_0_50", ylab = "cor_lengths_1", main = "Scatter Plot 1")
+# Marginal cases on Correlation Length
+for (i in 1:4) { # looking at effects in the 4 following weeks 
+  print(cor(log(weekly_spatial_metrics$cor_lengths_2[-seq_len(i)]), log(weekly_spatial_metrics$marginal_cases[-seq_len(i)]), use = "complete.obs"))
+} # decreases from .44 correlation
 
-# Scatter plot for cor(df$r_0_50, df$cor_lengths_2, use = "complete.obs")
-plot(df$r_0_50, df$cor_lengths_2, xlab = "r_0_50", ylab = "cor_lengths_2", main = "Scatter Plot 2")
+cor(log(weekly_spatial_metrics$cor_lengths_2), log(weekly_spatial_metrics$next_week_marginal_cases), use = "complete.obs")
 
-# Scatter plot for cor(df$cor_lengths_1, df$cor_lengths_2, use = "complete.obs")
-plot(df$cor_lengths_1, df$cor_lengths_2, xlab = "cor_lengths_1", ylab = "cor_lengths_2", main = "Scatter Plot 3")
+
+
+lm_model <- lm(log(weekly_spatial_metrics$next_week_marginal_cases) ~ log(weekly_spatial_metrics$cor_lengths_2), data = weekly_spatial_metrics)
+summary(lm_model)
+
+# a 10% increase in correlation length (km) corresponds to a 7.36% change in cases in the following week
+# there is heteroskedasticity
+
+# Calculate robust standard errors
+robust_se <- sqrt(diag(vcovHC(lm_model, type = "HC1")))
+
+# Perform hypothesis tests with robust standard errors
+robust_test <- coeftest(lm_model, vcov = vcovHC(lm_model, type = "HC1")) # still significant
+
+# multiple model
+mlm <- lm(log(weekly_spatial_metrics$next_week_marginal_cases) ~ log(weekly_spatial_metrics$cor_lengths_2) + log(weekly_spatial_metrics$r_0_50), data = weekly_spatial_metrics)
+summary(mlm)
 ```
 
 # Some Plots for C(r)
 
 ```{r}
-# Inspect Weeks 10-20
 matrix_Cr <- sapply(list_Cr, unlist)
 matplot(r_lower, matrix_Cr, type = "l", col = 1:20, lty = 1:20,
-        xlab = "r_lower", ylab = "C_r", main = "Weeks 10-20",
+        xlab = "r_lower", ylab = "C_r", main = "All Weeks",
         legend.text = seq_along(list_Cr))
 
 # Add vertical lines and create a legend
@@ -607,7 +644,7 @@ length(list_Cr)
 
 ```{r}
 # Split list into 10 subsets
-list_of_subsets <- split(list_Cr[1:50], rep(1:5, each = 10))
+list_of_subsets <- split(list_Cr, rep(1:10, each = 15))
 
 # Create a list to store matrix_Cr for each subset
 list_of_matrix_Cr <- list()
