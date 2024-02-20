@@ -378,7 +378,7 @@ Output: covid_counties_1_2
 
 # END OF DATA CLEANING
 
-## Calculate C(r)
+## Calculate Spatial Correlations and Correlation Lengths
 
 ```{r}
 
@@ -448,7 +448,7 @@ cor_lengths_2 = c()
 # up until week 5 we have < 22 observations
 
 # for (w in 6:153) {
-for (w in 6:58) {
+for (w in 6:153) {
   # Subset data by fixing week T
   county_week_T = filter(county_week, week == w)
   
@@ -494,7 +494,7 @@ for (w in 6:58) {
     C_r_T[i]= numerator/denominator # literally cor(X_T_1_r, X_T_2_r)
     
     # is C_r_T significant?
-    significant[i] = (cor.test(X_T_1_r, X_T_2_r)$p.value < .000001)
+    significant[i] = (cor.test(X_T_1_r, X_T_2_r)$p.value < .01)
 
 }
 
@@ -523,10 +523,65 @@ for (w in 6:58) {
   cor_lengths_2[w] =  xi_2
   list_Cr[[w]] <- C_r_T
 }
-cor_lengths_1 = unlist(cor_lengths_1[6:153])
-cor_lengths_2 = unlist(cor_lengths_2[6:153])
-list_Cr = list_Cr[6:153]
-list_Cr = list_Cr[1:53]
+```
+
+```{r}
+#run ONCE
+cor_lengths_1=cor_lengths_1[6:153]
+cor_lengths_2=cor_lengths_2[6:153]
+list_Cr=list_Cr[6:153]
+
+# prepare distance interval column names
+col_names <- paste("r", r_lower, r_upper, sep = "_")
+
+# prepare for date column
+dates = unique(county_week$start_date)
+dates = as.Date(dates)
+sorted_dates <- dates[order(dates)]
+date_names = as.character(sorted_dates)[6:153]
+```
+
+```{r}
+# Create dataframe
+df <- data.frame(matrix(NA, nrow = length(list_Cr), ncol = 51))
+
+colnames(df)[1] <- "week_start_date"
+colnames(df)[2:49] <- as.character(col_names)
+colnames(df)[50:51] <- c("cor_lengths_1", "cor_lengths_2")
+
+# Fill in first column with dates
+df[, "week_start_date"] <- date_names
+
+
+# Fill the data frame with list_Cr values
+for (i in seq_along(list_Cr)) {
+  df[i, 2:49] <- unlist(list_Cr[[i]])
+}
+
+# Fill the last two columns with cor_lengths_1 and cor_lengths_2
+df[, "cor_lengths_1"] <- cor_lengths_1
+df[, "cor_lengths_2"] <- cor_lengths_2
+
+head(df)
+
+# save to csv
+write.csv(df, "weekly_spatial_metrics")
+
+```
+```{r}
+# some quick analysis
+cor(df$r_0_50, df$cor_lengths_1)
+cor(df$r_0_50, df$cor_lengths_2, use = "complete.obs")
+cor(df$cor_lengths_1, df$cor_lengths_2, use = "complete.obs")
+
+# Scatter plot for cor(df$r_0_50, df$cor_lengths_1)
+plot(df$r_0_50, df$cor_lengths_1, xlab = "r_0_50", ylab = "cor_lengths_1", main = "Scatter Plot 1")
+
+# Scatter plot for cor(df$r_0_50, df$cor_lengths_2, use = "complete.obs")
+plot(df$r_0_50, df$cor_lengths_2, xlab = "r_0_50", ylab = "cor_lengths_2", main = "Scatter Plot 2")
+
+# Scatter plot for cor(df$cor_lengths_1, df$cor_lengths_2, use = "complete.obs")
+plot(df$cor_lengths_1, df$cor_lengths_2, xlab = "cor_lengths_1", ylab = "cor_lengths_2", main = "Scatter Plot 3")
 ```
 
 # Some Plots for C(r)
@@ -544,13 +599,15 @@ for (i in seq_along(cor_lengths_1)) {
   abline(v = cor_lengths_2[i], lty = 2, col = "red")
   abline(v = cor_lengths_1[i], lty = 2, col = "blue")
 }
+
+length(list_Cr)
 ```
 
 
 
 ```{r}
 # Split list into 10 subsets
-list_of_subsets <- split(list_Cr, rep(1:10, each = 15))
+list_of_subsets <- split(list_Cr[1:50], rep(1:5, each = 10))
 
 # Create a list to store matrix_Cr for each subset
 list_of_matrix_Cr <- list()
@@ -588,12 +645,10 @@ dates = unique(county_week$start_date)
 dates = as.Date(dates)
 sorted_dates <- dates[order(dates)]
 date_names = as.character(sorted_dates)
-names(combined_data) = c("Distance (km)", date_names)
-
+names(combined_data) = c("Distance (km)", date_names[6:153])
 # Make a copy with number columns
 combined_data_copy = combined_data
-names(combined_data_copy) = c("Distance (km)", c(1:153))
-
+names(combined_data_copy) = c("Distance (km)", c(1:148))
 # Rows: distance, columns: weeks
 write.csv(combined_data, "spatial_correlations_date.csv")
 write.csv(combined_data_copy, "spatial_correlations_week.csv")
@@ -610,6 +665,6 @@ aggregated_data <- county_week %>%
   )
 weekly_data = data.frame(do.call(rbind, list_Cr))
 names(weekly_data) = r_lower
-weeks_aggregated = cbind(aggregated_data, weekly_data)
+weeks_aggregated = cbind(aggregated_data[6:153,], weekly_data)
 write.csv(weeks_aggregated, "weekly_spatial_correlations.csv")
 ```
