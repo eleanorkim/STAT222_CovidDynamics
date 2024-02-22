@@ -707,6 +707,8 @@ print(weekly_summary1)
 ggplot(weekly_summary1, aes(x = week)) +
   geom_line(aes(y = new_cases, color = "Total Cases")) +
   #geom_line(aes(y = total_deaths, color = "Total Deaths")) +
+  geom_vline(xintercept = 47, color = "red", linetype = "dotted") +  # Red dotted line at week 47
+  geom_vline(xintercept = 97, color = "red", linetype = "dotted") +  # Red dotted line at week 97
   labs(y = "Count", title = "Weekly New Total Cases") +
   scale_color_manual(values = c("Total Cases" = "blue", "Total Deaths" = "red")) +
   theme_minimal()
@@ -760,6 +762,8 @@ print(weekly_summary_perpop1)
 ggplot(weekly_summary_perpop1, aes(x = week)) +
   geom_line(aes(y = new_avg_daily_cases_perpop, color = "Total Cases")) +
   #geom_line(aes(y = total_deaths, color = "Total Deaths")) +
+  geom_vline(xintercept = 47, color = "red", linetype = "dotted") +  # Red dotted line at week 47
+  geom_vline(xintercept = 97, color = "red", linetype = "dotted") +  # Red dotted line at week 97
   labs(y = "Count", title = "Weekly Total New Cases per Capital") +
   scale_color_manual(values = c("Total Cases" = "blue", "Total Deaths" = "red")) +
   theme_minimal()
@@ -768,6 +772,7 @@ ggplot(weekly_summary_perpop1, aes(x = week)) +
 ### Clean Poverty Data (from USDA) 2021
 
 ```{r}
+poverty_raw <- read_xlsx("PovertyEstimates.xlsx")
 poverty <- poverty_raw[-(1:3), ]
 
 # Set the column names of to be the values of the first row
@@ -785,6 +790,60 @@ nrow(poverty)
 ```
 
 ### Poverty EDA
+
+```{r}
+# Assuming 'poverty' is your original dataframe
+
+# Create a copy of the poverty dataframe
+pov <- poverty
+
+# Convert necessary columns to numeric if not already (assuming pov already has these columns as numeric based on your setup)
+pov$PCTPOVALL_2021 <- as.numeric(as.character(pov$PCTPOVALL_2021))
+pov$MEDHHINC_2021 <- as.numeric(as.character(pov$MEDHHINC_2021))
+
+# Summary statistics for PCTPOVALL_2021 and MEDHHINC_2021
+summary_pov_povall <- summary(pov$PCTPOVALL_2021)
+summary_pov_medhhinc <- summary(pov$MEDHHINC_2021)
+
+# Print summary statistics
+print(summary_pov_povall)
+print(summary_pov_medhhinc)
+
+# Function to categorize into tiers based on PCTPOVALL_2021
+get_tier_povall <- function(x) {
+  quantiles <- quantile(x, probs = c(1/3, 2/3), na.rm = TRUE)
+  tier <- ifelse(x <= quantiles[1], 1, ifelse(x <= quantiles[2], 2, 3))
+  return(tier)
+}
+
+# Apply the tier function to PCTPOVALL_2021
+pov$Tier_Poverty <- get_tier_povall(pov$PCTPOVALL_2021)
+
+# View the first few rows to check the new column
+head(pov)
+```
+
+```{r}
+# Load dplyr for data manipulation
+library(dplyr)
+
+# Assuming pov is your dataframe with the Tier_Poverty column and potentially NA values
+
+# Create summary table with NA values ignored
+tier_summary <- pov %>%
+  filter(!is.na(Tier_Poverty)) %>% # Ignore rows where Tier_Poverty is NA
+  group_by(Tier_Poverty) %>%
+  summarise(
+    Count = n(), # Sum of counties in that tier
+    Mean_Poverty_Rate = mean(PCTPOVALL_2021, na.rm = TRUE), # Mean poverty rate, ignoring NA
+    Median_Poverty_Rate = median(PCTPOVALL_2021, na.rm = TRUE), # Median poverty rate, ignoring NA
+    Min_Poverty_Rate = min(PCTPOVALL_2021, na.rm = TRUE), # Minimum poverty rate, ignoring NA
+    Max_Poverty_Rate = max(PCTPOVALL_2021, na.rm = TRUE) # Maximum poverty rate, ignoring NA
+  )
+
+# Print the summary table
+print(tier_summary)
+```
 
 ```{r}
 library(dplyr)
