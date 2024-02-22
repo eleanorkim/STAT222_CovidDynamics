@@ -1,0 +1,509 @@
+---
+title: "Covid vs Poverty"
+date: '2024-02-10'
+output: pdf_document
+---
+
+## Data Cleaning 
+
+```{r, message = FALSE}
+# packages
+library(readxl)
+library(stringr)
+library(lubridate)
+library(dplyr)
+library(ggplot2)
+```
+
+```{r, message = FALSE}
+# load in data 
+covid2020_raw <- read.csv("us-counties-2020.csv")
+covid2021_raw <- read.csv("us-counties-2021.csv")
+covid2022_raw <- read.csv("us-counties-2022.csv")
+population_raw <- read_xlsx("PopulationEstimates.xlsx")
+unemployment_raw <- read_xlsx("Unemployment.xlsx")
+poverty_raw <- read_xlsx("PovertyEstimates.xlsx")
+```
+
+### Clean Covid Data from 2020 - 2022
+
+Format data according to "Spatial correlations in geographical spreading of COVID‐19 in the United States". 
+
+```{r}
+# are there any NA's?
+print("NA count per column 2020")
+print(sapply(covid2020_raw, function(x) sum(is.na(x))))
+print("NA count per column 2021")
+print(sapply(covid2021_raw, function(x) sum(is.na(x))))
+print("NA count per column 2022")
+print(sapply(covid2022_raw, function(x) sum(is.na(x))))
+```
+
+```{r}
+
+# "starting on February 1 2020, we aggregate the total number of newly infected cases 
+# in a given county over the previous 7 days (including the given day) 
+# and calculate the daily average during this time period."
+
+# I originally made this a function bc i was gonna apply it to all 3 
+# covid datsets, but then I realized I should combine all 3 datasets
+# and then run the function once, so the time is continuous 
+
+create_daily_avg_by_week <- function(df, start_date){
+    # convert fips to string and add leading 0 if needed 
+    # (should be 5 char long)
+    df$fips = as.character(df$fips)
+    df$fips = str_pad(df$fips, width = 5, side = "left", pad = "0")
+    
+    # drop rows that have NA's for fips code
+    df <- df[!is.na(df$fips), ]
+    
+    # Convert the date column to a Date object
+    df$date <- as.Date(df$date, format = "%Y-%m-%d")
+
+    # drop any rows that are recorded before start_date
+    # retain rows recorded on start date
+    df <- df %>% filter(date >= start_date) 
+
+    # Create a week column that increases with every 7 days from the start date
+    df$week <- as.integer(ceiling(as.numeric(df$date - start_date + 1) / 7))
+    #df$week <- as.integer(ceiling((as.numeric(df$date - start_date)) / 7)) + 1
+
+    # Group by FIPS code and week, then summarize cases
+    daily_avg <- df %>% group_by(fips, week) %>%
+        summarize(total_cases = sum(cases), 
+            avg_daily_cases = sum(cases) / 7,
+            total_deaths = sum(deaths),
+            avg_daily_deaths = sum(deaths) / 7, 
+            .groups = 'drop')
+    
+    daily_avg
+}
+
+# combine all into one dataset 
+covid_raw = rbind(covid2020_raw, covid2021_raw, covid2022_raw)
+start_date <- as.Date("2020-01-26")
+covid_daily_avg <- create_daily_avg_by_week(covid_raw, start_date)
+head(covid_daily_avg)
+tail(covid_daily_avg)
+covid_daily_avg
+```
+### Choosing appropriate time frame to investigate further
+# maybe we should do this with avg_daily_cases per population??
+
+```{r}
+library(dplyr)
+
+# Assuming your data frame is named covid_data and has the columns mentioned
+# Group by week and then summarize the other columns
+weekly_summary <- covid_daily_avg %>%
+  group_by(week) %>%
+  summarize(
+    total_cases = sum(total_cases),
+    total_deaths = sum(total_deaths),
+    avg_daily_cases = sum(avg_daily_cases),
+    avg_daily_deaths = sum(avg_daily_deaths)
+  )
+
+# View the summarized data
+print(weekly_summary)
+
+library(ggplot2)
+
+# Plotting total cases and total deaths for each week
+ggplot(weekly_summary, aes(x = week)) +
+  geom_line(aes(y = total_cases, color = "Total Cases")) +
+  #geom_line(aes(y = total_deaths, color = "Total Deaths")) +
+  labs(y = "Count", title = "Weekly Total Cases and Deaths") +
+  scale_color_manual(values = c("Total Cases" = "blue", "Total Deaths" = "red")) +
+  theme_minimal()
+
+```
+```{r}
+weekly_summary1 <- weekly_summary %>%
+  mutate(
+    new_cases = c(41, diff(total_cases)),
+    new_deaths = c(0, diff(total_deaths)),
+    new_avg_daily_cases = c(5.857143e+00, diff(avg_daily_cases)),
+    new_avg_daily_deaths = c(0, diff(avg_daily_deaths))
+  ) %>%
+  select(week, new_cases, new_deaths, new_avg_daily_cases, new_avg_daily_deaths)
+
+# View the updated dataframe with new columns
+print(weekly_summary1)
+
+# Plotting total cases and total deaths for each week
+ggplot(weekly_summary1, aes(x = week)) +
+  geom_line(aes(y = new_cases, color = "Total Cases")) +
+  #geom_line(aes(y = total_deaths, color = "Total Deaths")) +
+  labs(y = "Count", title = "Weekly Total Cases and Deaths") +
+  scale_color_manual(values = c("Total Cases" = "blue", "Total Deaths" = "red")) +
+  theme_minimal()
+
+```
+# Check
+
+```{r}
+# Create a list of data frames, each for one week
+#weekly_data_frames <- split(covid_daily_avg, covid_daily_avg$week)
+
+#weekly_data_frames[1]
+```
+# Check
+
+```{r}
+#library(ggplot2)
+
+# Iterate over each weekly data frame to create scatter plots
+#for(week in names(weekly_data_frames)) {
+  # Access the current week's data frame
+#  current_week_df <- weekly_data_frames[[week]]
+  
+  # Create the scatter plot
+#  p <- ggplot(current_week_df, aes(x = avg_daily_cases, y = avg_daily_deaths)) +
+#    geom_point() +  # Add points for each county
+#    labs(title = paste("Week", week, ": Average Daily Cases vs Average Daily Deaths"),
+#         x = "Average Daily Cases",
+#         y = "Average Daily Deaths") +
+#    theme_minimal()
+  
+  # Display the plot
+#  print(p)
+  
+  # Optionally, save the plot to a file
+  # ggsave(paste0("week_", week, "_scatter_plot.png"), plot = p, width = 8, height = 6)
+#}
+```
+
+### Clean Population Data (from USDA) 2020 - 2022
+
+```{r}
+population <- population_raw[-(1:3), ]
+
+# Set the column names of to be the values of the first row
+colnames(population) <- as.character(unlist(population[1, ]))
+population <- population[-1, ]
+# remove first row of data since it's for entirety of USA
+population <- population[-1, ]
+
+# extract population estimates
+population <- population[, c("FIPStxt", "POP_ESTIMATE_2020", "POP_ESTIMATE_2021", "POP_ESTIMATE_2022")]
+population[, 2:4] <- lapply(population[, 2:4], as.numeric)
+
+# add average population 2020 - 2022 as we define socioeconomic factors as fixed 
+population$avg_pop <- rowMeans(population[, 2:4], na.rm = TRUE)
+
+head(population)
+```
+
+### Clean Poverty Data (from USDA) 2021
+
+```{r}
+poverty <- poverty_raw[-(1:3), ]
+
+# Set the column names of to be the values of the first row
+colnames(poverty) <- as.character(unlist(poverty[1, ]))
+poverty <- poverty[-1, ]
+# remove first row of data since it's for entirety of USA
+poverty <-poverty[-1, ]
+
+# extract unemployment rates 
+poverty <- poverty[, c("FIPS_Code", "PCTPOVALL_2021", "MEDHHINC_2021")]
+poverty[, 2:3] <- lapply(poverty[, 2:3], as.numeric)
+
+head(poverty)
+nrow(poverty)
+```
+
+### Comparing Unemployment and Poverty FIPS_Codes
+
+```{r}
+# Find FIPS codes in unemployment but not in poverty
+missing_fips <- unemployment$FIPS_Code[!unemployment$FIPS_Code %in% poverty$FIPS_Code]
+
+# Print missing FIPS codes
+print(missing_fips)
+print(length(missing_fips))
+
+# Alternatively, using setdiff() to find missing FIPS codes
+missing_fips_setdiff <- setdiff(poverty$FIPS_Code, unemployment$FIPS_Code)
+
+# Print missing FIPS codes found by setdiff
+print(missing_fips_setdiff)
+print(length(missing_fips_setdiff))
+```
+
+### Merge "Covid Daily Averages" and "Population" to form "Average Daily Fraction of Population"
+
+```{r}
+# "We then convert this number to the average daily fraction of the population 
+# in each county that was infected during this week 
+# by dividing with the county population." 
+
+covid_daily_avg_pop <- covid_daily_avg %>%
+    left_join(population, by = c("fips" = "FIPStxt")) %>%
+    select(fips, week, total_cases, total_deaths, 
+           avg_daily_cases, avg_daily_deaths, avg_pop)
+
+head(covid_daily_avg_pop)
+```
+
+### Back to Cleaning covid data code
+
+```{r}
+# counties with no population data 
+fips_no_pop_data <- covid_daily_avg_pop %>%
+  filter(is.na(avg_pop)) %>%
+  pull(fips) %>%
+  unique()
+print(fips_no_pop_data)
+```
+
+```{r}
+# how many counties are there?
+length(unique(covid_fract_daily_avg$fips))
+# doesn't match with 2411 counties from paper 
+```
+
+```{r}
+# "We remove 697 counties with a population less than 10,000 
+# because a small change in the number of cases in a small population 
+# can lead to large fluctuations, which results in a total of 2411 counties"
+
+covid_fract_daily_avg <- covid_daily_avg_pop %>%
+  # Remove rows where avg_pop is less than 10000
+  # or avg_pop is null
+  filter(avg_pop >= 10000, !is.na(avg_pop)) %>%
+  # divide by population
+  mutate(fract_avg_daily_cases = avg_daily_cases / avg_pop,
+         fract_avg_daily_deaths = avg_daily_deaths / avg_pop) %>%
+  select(fips, week, total_cases, total_deaths, 
+         avg_daily_cases, avg_daily_deaths, 
+           fract_avg_daily_cases, fract_avg_daily_deaths, avg_pop)
+
+head(covid_fract_daily_avg)
+```
+### Choosing appropriate time frame to investigate further
+# maybe we should do this with avg_daily_cases per population??
+
+```{r}
+library(dplyr)
+
+# Assuming your data frame is named covid_data and has the columns mentioned
+# Group by week and then summarize the other columns
+weekly_summary_perpop <- covid_fract_daily_avg %>%
+  group_by(week) %>%
+  summarize(
+    total_cases = sum(total_cases),
+    total_deaths = sum(total_deaths),
+    avg_daily_cases = sum(avg_daily_cases),
+    avg_daily_deaths = sum(avg_daily_deaths), 
+    avg_daily_cases_perpop = sum(fract_avg_daily_cases), 
+    avg_daily_deaths_perpop = sum(fract_avg_daily_deaths)
+  )
+
+# View the summarized data
+print(weekly_summary_perpop)
+
+library(ggplot2)
+
+# Plotting total cases and total deaths for each week
+ggplot(weekly_summary_perpop, aes(x = week)) +
+  geom_line(aes(y = avg_daily_cases_perpop, color = "Total Cases")) +
+  #geom_line(aes(y = total_deaths, color = "Total Deaths")) +
+  labs(y = "Count", title = "Weekly Total Cases and Deaths") +
+  scale_color_manual(values = c("Total Cases" = "blue", "Total Deaths" = "red")) +
+  theme_minimal()
+
+```
+
+```{r}
+weekly_summary_perpop1 <- weekly_summary_perpop %>%
+  mutate(
+    new_avg_daily_cases_perpop = c(2.447198e-06, diff(avg_daily_cases_perpop)),
+    new_avg_daily_deaths_perpop = c(0, diff(avg_daily_deaths_perpop))
+  ) %>%
+  select(week, new_avg_daily_cases_perpop, new_avg_daily_deaths_perpop)
+
+# View the updated dataframe with new columns
+print(weekly_summary_perpop1)
+
+# Plotting total cases and total deaths for each week
+ggplot(weekly_summary_perpop1, aes(x = week)) +
+  geom_line(aes(y = new_avg_daily_cases_perpop, color = "Total Cases")) +
+  #geom_line(aes(y = total_deaths, color = "Total Deaths")) +
+  labs(y = "Count", title = "Weekly Total Cases and Deaths") +
+  scale_color_manual(values = c("Total Cases" = "blue", "Total Deaths" = "red")) +
+  theme_minimal()
+```
+
+# Check
+
+```{r}
+# Create a list of data frames, each for one week
+#weekly_data_frames <- split(covid_daily_avg, covid_daily_avg$week)
+
+#weekly_data_frames[1]
+```
+
+#Check
+
+```{r}
+#library(ggplot2)
+
+# Iterate over each weekly data frame to create scatter plots
+#for(week in names(weekly_data_frames)) {
+  # Access the current week's data frame
+#  current_week_df <- weekly_data_frames[[week]]
+  
+  # Create the scatter plot
+#  p <- ggplot(current_week_df, aes(x = avg_daily_cases, y = avg_daily_deaths)) +
+#    geom_point() +  # Add points for each county
+#    labs(title = paste("Week", week, ": Average Daily Cases vs Average Daily Deaths"),
+#         x = "Average Daily Cases",
+#         y = "Average Daily Deaths") +
+#    theme_minimal()
+  
+  # Display the plot
+#  print(p)
+  
+  # Optionally, save the plot to a file
+  # ggsave(paste0("week_", week, "_scatter_plot.png"), plot = p, width = 8, height = 6)
+#}
+```
+
+### EDA
+
+```{r}
+library(dplyr)
+
+cumulative_cases_at_week_48 <- covid_fract_daily_avg %>%
+  filter(week == 48) %>%
+  select(fips, total_cases_at_week_48 = total_cases)
+
+cumulative_cases_at_week_101 <- covid_fract_daily_avg %>%
+  filter(week == 101) %>%
+  select(fips, total_cases_at_week_101 = total_cases)
+
+# Join the cumulative cases information for weeks 48 and 101 to the main dataset
+covid_yearly_prepared <- covid_fract_daily_avg %>%
+  left_join(cumulative_cases_at_week_48, by = "fips") %>%
+  left_join(cumulative_cases_at_week_101, by = "fips")
+
+# Calculate annual cases per capita after adjusting for cumulative totals
+covid_yearly_final <- covid_yearly_prepared %>%
+  group_by(fips, year) %>%
+  summarize(
+    last_week_cases = total_cases[which.max(week)],
+    avg_pop_last_week = avg_pop[which.max(week)],
+    total_cases_at_week_48 = first(total_cases_at_week_48),  # Removed na.rm = TRUE
+    total_cases_at_week_101 = first(total_cases_at_week_101),  # Removed na.rm = TRUE
+    .groups = 'drop'
+  ) %>%
+  mutate(
+    adjusted_total_cases = case_when(
+      year == "2020" ~ last_week_cases,
+      year == "2021" ~ last_week_cases - coalesce(total_cases_at_week_48, 0),  # Handle potential NA values
+      year == "2022" ~ last_week_cases - coalesce(total_cases_at_week_101, 0),  # Handle potential NA values
+      TRUE ~ NA_real_
+    ),
+    annual_cases_per_capita = adjusted_total_cases / avg_pop_last_week
+  ) %>%
+  select(-last_week_cases, -adjusted_total_cases)
+
+# Join with poverty data
+covid_yearly_final <- covid_yearly_final %>%
+  left_join(poverty %>% select(FIPS_Code, PCTPOVALL_2021, MEDHHINC_2021), by = c("fips" = "FIPS_Code")) %>%
+  mutate(
+    avg_pov_rate = PCTPOVALL_2021,
+    Median_Household_Income_2021 = MEDHHINC_2021
+  ) %>%
+  select(year, fips, annual_cases_per_capita, avg_pov_rate, Median_Household_Income_2021)
+
+# View the resulting dataset
+head(covid_yearly_final)
+nrow(covid_yearly_final)
+```
+```{r}
+library(dplyr)
+
+# Assuming covid_fract_daily_avg is prepared with year assignment based on week
+#covid_yearly <- covid_fract_daily_avg %>%
+#  group_by(fips, year) %>%
+#  summarize(
+#    last_week_cases = total_cases[which.max(week)],
+#    avg_pop_last_week = avg_pop[which.max(week)],
+#    .groups = 'drop'
+#  ) %>%
+#  mutate(
+#    annual_cases_per_capita = last_week_cases / avg_pop_last_week
+#  )
+
+# Assuming poverty data has unique fips codes without year variation
+# Joining with the poverty data
+#covid_yearly_final <- covid_yearly %>%
+#  left_join(poverty %>% select(FIPS_Code, PCTPOVALL_2021, MEDHHINC_2021), by = c("fips" = "FIPS_Code")) %>%
+#  mutate(
+#    avg_pov_rate = PCTPOVALL_2021,
+#    Median_Household_Income_2021 = MEDHHINC_2021
+#  ) %>%
+#  select(year, fips, annual_cases_per_capita, avg_pov_rate, Median_Household_Income_2021)
+
+# View the resulting dataset
+#head(covid_yearly_final)
+#nrow(covid_yearly_final)
+#covid_yearly_final
+```
+
+
+# Identifying counties with missing data
+
+```{r}
+# counties with no poverty data or missing Median Household Income data
+fips_no_pov_data <- covid_yearly_final %>%
+  filter(is.na(avg_pov_rate) | is.na(Median_Household_Income_2021)) %>%
+  pull(fips) %>%
+  unique()
+print(fips_no_pov_data)
+
+print(sapply(covid_yearly_final, function(x) sum(is.na(x))))
+```
+
+# Poverty Rate Analysis for All Years
+
+```{r}
+# filter out counties with no poverty rate data
+covid_fract_daily_avg_pov_filtered1 <- covid_yearly_final %>%
+  filter(!is.na(avg_pov_rate))
+
+# Visualize the relationship between avg_pov_rate and annual_cases_per_capita
+ggplot(covid_fract_daily_avg_pov_filtered1, aes(x = avg_pov_rate, y = annual_cases_per_capita, color = year)) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Annual Cases per Capita by Poverty Rate for each County",
+       x = "Average Poverty Rate (%)",
+       y = "Annual Cases per Capita",
+       caption = "Data source: [Johns Hopkins, USDA]",
+       color = "Year") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# Median Household Income Analysis for All Years
+
+```{r}
+# filter out counties with no poverty rate data
+covid_fract_daily_avg_pov_filtered2 <- covid_yearly_final %>%
+  filter(!is.na(Median_Household_Income_2021))
+
+# Visualize the relationship between median_hosuehold_income and annual_cases_per_capita
+ggplot(covid_fract_daily_avg_pov_filtered2, aes(x = Median_Household_Income_2021, y = annual_cases_per_capita, color = year)) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Annual Cases per Capita by Median Household Income for each County",
+       x = "Median Household Income ($)",
+       y = "Annual Cases per Capita",
+       caption = "Data source: [Johns Hopkins, USDA]",
+       color = "Year") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
