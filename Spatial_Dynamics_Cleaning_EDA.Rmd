@@ -274,7 +274,7 @@ county_week <- covid_daily_avg_pop %>%
   # divide by population
   mutate(fract_avg_daily_cases = avg_daily_cases / avg_pop,
          fract_avg_daily_deaths = avg_daily_deaths / avg_pop) %>%
-  select(fips, week, total_cases, total_deaths, 
+  select(fips, week, total_cases, total_deaths, avg_daily_cases, avg_daily_deaths,
            fract_avg_daily_cases, fract_avg_daily_deaths,start_date, avg_pop)
 
 nrow(county_week)
