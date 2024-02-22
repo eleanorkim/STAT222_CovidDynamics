@@ -664,8 +664,7 @@ robust_test <- coeftest(lm_model, vcov = vcovHC(lm_model, type = "HC1")) # still
 ```{r}
 library(dplyr)
 
-# Assuming your data frame is named covid_data and has the columns mentioned
-# Group by week and then summarize the other columns
+# Group by week and then summarize the other columns for entire covid data
 weekly_summary <- covid_daily_avg %>%
   group_by(week) %>%
   summarize(
@@ -691,6 +690,7 @@ ggplot(weekly_summary, aes(x = week)) +
 ```
 
 ```{r}
+# taking new cases and deaths per week by taking row-wise differences
 weekly_summary1 <- weekly_summary %>%
   mutate(
     new_cases = c(41, diff(total_cases)),
@@ -707,7 +707,7 @@ print(weekly_summary1)
 ggplot(weekly_summary1, aes(x = week)) +
   geom_line(aes(y = new_cases, color = "Total Cases")) +
   #geom_line(aes(y = total_deaths, color = "Total Deaths")) +
-  labs(y = "Count", title = "Weekly Total Cases and Deaths") +
+  labs(y = "Count", title = "Weekly New Total Cases") +
   scale_color_manual(values = c("Total Cases" = "blue", "Total Deaths" = "red")) +
   theme_minimal()
 
@@ -717,8 +717,7 @@ ggplot(weekly_summary1, aes(x = week)) +
 ```{r}
 library(dplyr)
 
-# Assuming your data frame is named covid_data and has the columns mentioned
-# Group by week and then summarize the other columns
+# Group by week and then summarize the other columns for covid data per capital
 weekly_summary_perpop <- county_week %>%
   group_by(week) %>%
   summarize(
@@ -746,6 +745,7 @@ ggplot(weekly_summary_perpop, aes(x = week)) +
 ```
 
 ```{r}
+# taking new cases and deaths per week per capita by taking row-wise differences
 weekly_summary_perpop1 <- weekly_summary_perpop %>%
   mutate(
     new_avg_daily_cases_perpop = c(2.447198e-06, diff(avg_daily_cases_perpop)),
@@ -760,7 +760,7 @@ print(weekly_summary_perpop1)
 ggplot(weekly_summary_perpop1, aes(x = week)) +
   geom_line(aes(y = new_avg_daily_cases_perpop, color = "Total Cases")) +
   #geom_line(aes(y = total_deaths, color = "Total Deaths")) +
-  labs(y = "Count", title = "Weekly Total Cases and Deaths") +
+  labs(y = "Count", title = "Weekly Total New Cases per Capital") +
   scale_color_manual(values = c("Total Cases" = "blue", "Total Deaths" = "red")) +
   theme_minimal()
 ```
