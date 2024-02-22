@@ -789,7 +789,7 @@ nrow(poverty)
 ```{r}
 library(dplyr)
 
-covid_fract_daily_avg <- covid_fract_daily_avg %>%
+county_week <- county_week %>%
   mutate(
     year = case_when(
       week <= 48 ~ "2020",
@@ -798,16 +798,16 @@ covid_fract_daily_avg <- covid_fract_daily_avg %>%
     )
   )
 
-cumulative_cases_at_week_48 <- covid_fract_daily_avg %>%
+cumulative_cases_at_week_48 <- county_week %>%
   filter(week == 48) %>%
   select(fips, total_cases_at_week_48 = total_cases)
 
-cumulative_cases_at_week_101 <- covid_fract_daily_avg %>%
+cumulative_cases_at_week_101 <- county_week %>%
   filter(week == 101) %>%
   select(fips, total_cases_at_week_101 = total_cases)
 
 # Join the cumulative cases information for weeks 48 and 101 to the main dataset
-covid_yearly_prepared <- covid_fract_daily_avg %>%
+covid_yearly_prepared <- county_week %>%
   left_join(cumulative_cases_at_week_48, by = "fips") %>%
   left_join(cumulative_cases_at_week_101, by = "fips")
 
