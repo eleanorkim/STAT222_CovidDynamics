@@ -377,6 +377,15 @@ ggplot(weekly_summary_perpop1, aes(x = week)) +
 ```{r}
 library(dplyr)
 
+covid_fract_daily_avg <- covid_fract_daily_avg %>%
+  mutate(
+    year = case_when(
+      week <= 48 ~ "2020",
+      week > 48 & week <= 101 ~ "2021",
+      TRUE ~ "2022"
+    )
+  )
+
 cumulative_cases_at_week_48 <- covid_fract_daily_avg %>%
   filter(week == 48) %>%
   select(fips, total_cases_at_week_48 = total_cases)
