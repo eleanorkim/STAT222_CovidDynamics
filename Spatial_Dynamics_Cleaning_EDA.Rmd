@@ -1116,6 +1116,7 @@ print(paste("Slope of the regression line:", slope))
 ### Clean Education Data (from USDA) 2021
 
 ```{r}
+education_raw <- read_xlsx("Education.xlsx")
 education <- education_raw[-(1:2), ]
 
 # Set the column names of to be the values of the first row
