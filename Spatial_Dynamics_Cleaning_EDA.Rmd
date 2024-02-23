@@ -677,7 +677,7 @@ weekly_summary <- covid_daily_avg %>%
   group_by(week) %>%
   summarize(
     total_cases = sum(total_cases),
-    total_deaths = sum(total_deaths),
+    total_deaths = sum(total_deaths, na.rm = TRUE),
     avg_daily_cases = sum(avg_daily_cases),
     avg_daily_deaths = sum(avg_daily_deaths)
   )
@@ -685,14 +685,20 @@ weekly_summary <- covid_daily_avg %>%
 # View the summarized data
 print(weekly_summary)
 
-# Plotting total cases and total deaths for each week
+# Plotting total cases for each week
 ggplot(weekly_summary, aes(x = week)) +
   geom_line(aes(y = total_cases, color = "Total Cases")) +
   #geom_line(aes(y = total_deaths, color = "Total Deaths")) +
-  labs(y = "Count", title = "Weekly Total Cases and Deaths") +
+  labs(y = "Count", title = "Total Cases per Week ") +
   scale_color_manual(values = c("Total Cases" = "blue", "Total Deaths" = "red")) +
   theme_minimal()
 
+# Plotting total deaths for each week
+ggplot(weekly_summary, aes(x = week)) +
+  geom_line(aes(y = total_deaths, color = "Total Deaths")) +
+  labs(y = "Count", title = "Total Deaths per Week") +
+  scale_color_manual(values = c("Total Deaths" = "red")) +
+  theme_minimal()
 ```
 
 ```{r}
@@ -709,14 +715,22 @@ weekly_summary1 <- weekly_summary %>%
 # View the updated dataframe with new columns
 print(weekly_summary1)
 
-# Plotting total cases and total deaths for each week
+# Plotting new cases for each week
 ggplot(weekly_summary1, aes(x = week)) +
-  geom_line(aes(y = new_cases, color = "Total Cases")) +
-  #geom_line(aes(y = total_deaths, color = "Total Deaths")) +
+  geom_line(aes(y = new_cases, color = "New Cases")) +
   geom_vline(xintercept = 47, color = "red", linetype = "dotted") +  # Red dotted line at week 47
   geom_vline(xintercept = 97, color = "red", linetype = "dotted") +  # Red dotted line at week 97
-  labs(y = "Count", title = "Weekly New Total Cases") +
-  scale_color_manual(values = c("Total Cases" = "blue", "Total Deaths" = "red")) +
+  labs(y = "Count", title = "Weekly New Cases") +
+  scale_color_manual(values = c("New Cases" = "blue")) +
+  theme_minimal()
+
+# Plotting new deaths for each week
+ggplot(weekly_summary1, aes(x = week)) +
+  geom_line(aes(y = new_deaths, color = "New Deaths")) +
+  geom_vline(xintercept = 47, color = "red", linetype = "dotted") +  # Red dotted line at week 47
+  geom_vline(xintercept = 97, color = "red", linetype = "dotted") +  # Red dotted line at week 97
+  labs(y = "Count", title = "Weekly New Deaths") +
+  scale_color_manual(values = c("New Deaths" = "red")) +
   theme_minimal()
 
 ```
@@ -732,20 +746,27 @@ weekly_summary_perpop <- county_week %>%
     avg_daily_cases = sum(avg_daily_cases),
     avg_daily_deaths = sum(avg_daily_deaths), 
     avg_daily_cases_perpop = sum(fract_avg_daily_cases), 
-    avg_daily_deaths_perpop = sum(fract_avg_daily_deaths)
+    avg_daily_deaths_perpop = sum(fract_avg_daily_deaths, na.rm = TRUE)
   )
 
 # View the summarized data
 print(weekly_summary_perpop)
 
-# Plotting total cases and total deaths for each week
+# Plotting total cases for each week
 ggplot(weekly_summary_perpop, aes(x = week)) +
   geom_line(aes(y = avg_daily_cases_perpop, color = "Total Cases")) +
-  #geom_line(aes(y = total_deaths, color = "Total Deaths")) +
-  labs(y = "Count", title = "Weekly Total Cases and Deaths") +
-  scale_color_manual(values = c("Total Cases" = "blue", "Total Deaths" = "red")) +
+  labs(y = "Count", title = "Total Cases per capita per Week") +
+  scale_color_manual(values = c("Total Cases" = "blue")) +
   theme_minimal()
 
+library(ggplot2)
+
+# Plotting total deaths for each week
+ggplot(weekly_summary_perpop, aes(x = week)) +
+  geom_line(aes(y = avg_daily_deaths_perpop, color = "Total Deaths")) +
+  labs(y = "Count", title = "Total Deaths per capita per Week") +
+  scale_color_manual(values = c("Total Deaths" = "red")) +
+  theme_minimal()
 ```
 
 ```{r}
@@ -760,14 +781,22 @@ weekly_summary_perpop1 <- weekly_summary_perpop %>%
 # View the updated dataframe with new columns
 print(weekly_summary_perpop1)
 
-# Plotting total cases and total deaths for each week
+# Plotting new cases for each week
 ggplot(weekly_summary_perpop1, aes(x = week)) +
-  geom_line(aes(y = new_avg_daily_cases_perpop, color = "Total Cases")) +
-  #geom_line(aes(y = total_deaths, color = "Total Deaths")) +
+  geom_line(aes(y = new_avg_daily_cases_perpop, color = "New Cases")) +
   geom_vline(xintercept = 47, color = "red", linetype = "dotted") +  # Red dotted line at week 47
   geom_vline(xintercept = 97, color = "red", linetype = "dotted") +  # Red dotted line at week 97
-  labs(y = "Count", title = "Weekly Total New Cases per Capital") +
-  scale_color_manual(values = c("Total Cases" = "blue", "Total Deaths" = "red")) +
+  labs(y = "Count", title = "Weekly New Cases per Capita") +
+  scale_color_manual(values = c("New Cases" = "blue")) +
+  theme_minimal()
+
+# Plotting new deaths for each week
+ggplot(weekly_summary_perpop1, aes(x = week)) +
+  geom_line(aes(y = new_avg_daily_deaths_perpop, color = "New Deaths")) +
+  geom_vline(xintercept = 47, color = "red", linetype = "dotted") +  # Red dotted line at week 47
+  geom_vline(xintercept = 97, color = "red", linetype = "dotted") +  # Red dotted line at week 97
+  labs(y = "Count", title = "Weekly New Deaths per Capita") +
+  scale_color_manual(values = c("New Deaths" = "red")) +
   theme_minimal()
 ```
 
