@@ -881,15 +881,22 @@ covid_yearly_final <- covid_yearly_prepared %>%
     .groups = 'drop'
   ) %>%
   mutate(
-    adjusted_total_cases = case_when(
-      year == "2020" ~ last_week_cases,
-      year == "2021" ~ last_week_cases - coalesce(total_cases_at_week_48, 0),  # Handle potential NA values
-      year == "2022" ~ last_week_cases - coalesce(total_cases_at_week_101, 0),  # Handle potential NA values
-      TRUE ~ NA_real_
-    ),
-    annual_cases_per_capita = adjusted_total_cases / avg_pop_last_week
-  ) %>%
-  select(-last_week_cases, -adjusted_total_cases)
+  adjusted_total_cases = ifelse(
+    year == "2020", 
+    last_week_cases,
+    ifelse(
+      year == "2021", 
+      last_week_cases - coalesce(total_cases_at_week_48, 0),
+      ifelse(
+        year == "2022", 
+        last_week_cases - coalesce(total_cases_at_week_101, 0),
+        NA_real_ # This is the 'else' condition if none of the above conditions are TRUE
+      )
+    )
+  ),
+  annual_cases_per_capita = adjusted_total_cases / avg_pop_last_week
+) %>%
+select(-last_week_cases, -adjusted_total_cases)
 
 # Join with poverty data
 covid_yearly_final <- covid_yearly_final %>%
@@ -982,3 +989,101 @@ slope <- coef(model)["Median_Household_Income_2021"]
 print(paste("Slope of the regression line:", slope))
 ```
 
+### Clean Unemployment Data (from USDA) 2020 - 2022 
+
+```{r}
+unemployment_raw <- read_xlsx("Unemployment.xlsx")
+unemployment <- unemployment_raw[-(1:3), ]
+
+# Set the column names of to be the values of the first row
+colnames(unemployment) <- as.character(unlist(unemployment[1, ]))
+unemployment <- unemployment[-1, ]
+# remove first row of data since it's for entirety of USA
+unemployment <-unemployment[-1, ]
+
+# extract unemployment rates 
+unemployment <- unemployment[, c("FIPS_Code", "Unemployment_rate_2020", 
+                                 "Unemployment_rate_2021", "Unemployment_rate_2022",
+                                 "Median_Household_Income_2021", 
+                                 "Med_HH_Income_Percent_of_State_Total_2021")]
+unemployment[, 2:6] <- lapply(unemployment[, 2:6], as.numeric)
+
+# add average unemployment rate 2020 - 2022 as we define socioeconomic factors as fixed 
+unemployment$avg_unemploy_rate <- rowMeans(unemployment[, 2:4], na.rm = TRUE)
+
+head(unemployment)
+```
+### Unemployment EDA
+
+```{r}
+# Join with unemployment data 
+covid_yearly_final_unemployment <- covid_yearly_final %>%
+  left_join(unemployment, by = c("fips" = "FIPS_Code")) %>%
+    select(-"Unemployment_rate_2020", -"Unemployment_rate_2021",
+           -"Unemployment_rate_2022", -"Median_Household_Income_2021.x")
+```
+
+
+```{r}
+# counties with no unemployment data 
+fips_no_unemploy_data <- covid_yearly_final_unemployment %>%
+  filter(is.na(avg_unemploy_rate) | is.na(Median_Household_Income_2021.y) |     
+           is.na(Med_HH_Income_Percent_of_State_Total_2021)) %>%
+  pull(fips) %>%
+  unique()
+print(fips_no_unemploy_data)
+```
+
+```{r}
+# unemployment rate 
+
+# filter out counties with no unemployment rate data 
+covid_fract_daily_avg_unemploy_rate_filtered <- covid_yearly_final_unemployment %>%
+  filter(!is.na(avg_unemploy_rate))
+
+ggplot(covid_fract_daily_avg_unemploy_rate_filtered, 
+       aes(x = avg_unemploy_rate, y = annual_cases_per_capita, color = year)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "black") +  # Add regression line
+  theme_minimal() +
+  labs(title = "Annual Cases per Capita by Unemployment Rate for each County",
+       x = "Unemployment Rate (%)",
+       y = "Annual Cases per Capita",
+       caption = "Data source: [Johns Hopkins, USDA]",
+       color = "Year") +  # Label for the color legend
+  theme(plot.title = element_text(hjust = 0.5)) # Centers the plot title
+
+# Fit a linear model for all data to calculate the slope
+model <- lm(annual_cases_per_capita ~ avg_unemploy_rate, data = covid_fract_daily_avg_unemploy_rate_filtered)
+
+# Print the slope of the regression line
+slope <- coef(model)["avg_unemploy_rate"]
+print(paste("Slope of the regression line:", slope))
+```
+
+```{r}
+# Med_HH_Income_Percent_of_State_Total_2021
+
+# filter out counties with no Med_HH_Income_Percent_of_State_Total_2021 data 
+covid_fract_daily_avg_income_percent_filtered <- covid_yearly_final_unemployment %>%
+  filter(!is.na(Med_HH_Income_Percent_of_State_Total_2021))
+
+ggplot(covid_fract_daily_avg_income_percent_filtered,
+       aes(x = Med_HH_Income_Percent_of_State_Total_2021, y = annual_cases_per_capita, color = year)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "black") +  # Add regression line
+  theme_minimal() +
+  labs(title = "Annual Cases per Capita by Relative Househould Income for each County",
+       x = "Median Household Income as a Percentage of State Total",
+       y = "Annual Cases per Capita",
+       caption = "Data source: [Johns Hopkins, USDA]",
+       color = "Year") +
+  theme(plot.title = element_text(hjust = 0.5)) # Centers the plot title
+
+# Fit a linear model for all data to calculate the slope
+model <- lm(annual_cases_per_capita ~ Med_HH_Income_Percent_of_State_Total_2021, data = covid_fract_daily_avg_unemploy_rate_filtered)
+
+# Print the slope of the regression line
+slope <- coef(model)["Med_HH_Income_Percent_of_State_Total_2021"]
+print(paste("Slope of the regression line:", slope))
+```
