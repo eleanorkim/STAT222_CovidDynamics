@@ -1108,48 +1108,6 @@ head(education)
 ```
 
 ```{r}
-covid_fract_daily_avg <- covid_fract_daily_avg %>%
-  mutate(
-    year = case_when(
-      week <= 48 ~ "2020",
-      week > 48 & week <= 101 ~ "2021",
-      TRUE ~ "2022"
-    )
-  )
-cumulative_cases_at_week_48 <- covid_fract_daily_avg %>%
-  filter(week == 48) %>%
-  select(fips, total_cases_at_week_48 = total_cases)
-
-cumulative_cases_at_week_101 <- covid_fract_daily_avg %>%
-  filter(week == 101) %>%
-  select(fips, total_cases_at_week_101 = total_cases)
-
-# Join the cumulative cases information for weeks 48 and 101 to the main dataset
-covid_yearly_prepared <- covid_fract_daily_avg %>%
-  left_join(cumulative_cases_at_week_48, by = "fips") %>%
-  left_join(cumulative_cases_at_week_101, by = "fips")
-
-# Calculate annual cases per capita after adjusting for cumulative totals
-covid_yearly_final <- covid_yearly_prepared %>%
-  group_by(fips, year) %>%
-  summarize(
-    last_week_cases = total_cases[which.max(week)],
-    avg_pop_last_week = avg_pop[which.max(week)],
-    total_cases_at_week_48 = first(total_cases_at_week_48),  # Removed na.rm = TRUE
-    total_cases_at_week_101 = first(total_cases_at_week_101),  # Removed na.rm = TRUE
-    .groups = 'drop'
-  ) %>%
-  mutate(
-    adjusted_total_cases = case_when(
-      year == "2020" ~ last_week_cases,
-      year == "2021" ~ last_week_cases - coalesce(total_cases_at_week_48, 0),  # Handle potential NA values
-      year == "2022" ~ last_week_cases - coalesce(total_cases_at_week_101, 0),  # Handle potential NA values
-      TRUE ~ NA_real_
-    ),
-    annual_cases_per_capita = adjusted_total_cases / avg_pop_last_week
-  ) %>%
-  select(-last_week_cases, -adjusted_total_cases)
-
 # join with education
 covid_yearly_final_ed <- covid_yearly_final %>%
   left_join(education %>% select(FIPS_code = `Federal Information Processing Standard (FIPS) Code`, No_Degree_p = `Percent of adults with less than a high school diploma, 2017-21`, High_School_Diploma_Only_p = `Percent of adults with a high school diploma only, 2017-21`, Bachelors_Or_Higher_p = `Percent of adults with a bachelor's degree or higher, 2017-21`), by = c("fips" = "FIPS_code")) %>%
