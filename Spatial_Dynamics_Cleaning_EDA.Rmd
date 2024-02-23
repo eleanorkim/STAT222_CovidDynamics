@@ -823,12 +823,10 @@ nrow(poverty)
 ### Poverty EDA
 
 ```{r}
-# Assuming 'poverty' is your original dataframe
-
 # Create a copy of the poverty dataframe
 pov <- poverty
 
-# Convert necessary columns to numeric if not already (assuming pov already has these columns as numeric based on your setup)
+# Convert necessary columns to numeric if not already 
 pov$PCTPOVALL_2021 <- as.numeric(as.character(pov$PCTPOVALL_2021))
 pov$MEDHHINC_2021 <- as.numeric(as.character(pov$MEDHHINC_2021))
 
@@ -855,9 +853,6 @@ head(pov)
 ```
 
 ```{r}
-
-# Assuming pov is your dataframe with the Tier_Poverty column and potentially NA values
-
 # Create summary table with NA values ignored
 tier_summary <- pov %>%
   filter(!is.na(Tier_Poverty)) %>% # Ignore rows where Tier_Poverty is NA
@@ -956,7 +951,6 @@ print(sapply(covid_yearly_final, function(x) sum(is.na(x))))
 # Poverty Rate Analysis for All Years
 
 ```{r}
-# Assuming covid_fract_daily_avg_pov_filtered1 is already prepared
 covid_fract_daily_avg_pov_filtered1 <- covid_yearly_final %>%
   filter(!is.na(avg_pov_rate))
 
@@ -985,8 +979,6 @@ print(paste("Slope of the regression line:", slope))
 # Median Household Income Analysis for All Years
 
 ```{r}
-
-# Assuming covid_fract_daily_avg_pov_filtered2 is prepared
 covid_fract_daily_avg_pov_filtered2 <- covid_yearly_final %>%
   filter(!is.na(Median_Household_Income_2021))
 
