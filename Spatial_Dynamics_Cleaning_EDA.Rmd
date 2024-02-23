@@ -1088,3 +1088,88 @@ model <- lm(annual_cases_per_capita ~ Med_HH_Income_Percent_of_State_Total_2021,
 slope <- coef(model)["Med_HH_Income_Percent_of_State_Total_2021"]
 print(paste("Slope of the regression line:", slope))
 ```
+
+### Education EDA
+
+### Clean Education Data (from USDA) 2021
+
+```{r}
+education <- education_raw[-(1:2), ]
+
+# Set the column names of to be the values of the first row
+colnames(education) <- as.character(unlist(education[1, ]))
+education <- education[-1, ]
+# remove first row of data since it's for entirety of USA
+education <- education[-1, ]
+education <- education[, c("Federal Information Processing Standard (FIPS) Code", "Percent of adults with less than a high school diploma, 2017-21","Percent of adults with a high school diploma only, 2017-21", "Percent of adults with a bachelor's degree or higher, 2017-21")]
+#education
+
+head(education)
+#nrow(education)
+```
+
+```{r}
+# join with education
+covid_yearly_final_ed <- covid_yearly_final %>%
+  left_join(education %>% select(FIPS_code = `Federal Information Processing Standard (FIPS) Code`, No_Degree_p = `Percent of adults with less than a high school diploma, 2017-21`, High_School_Diploma_Only_p = `Percent of adults with a high school diploma only, 2017-21`, Bachelors_Or_Higher_p = `Percent of adults with a bachelor's degree or higher, 2017-21`), by = c("fips" = "FIPS_code")) %>%
+  mutate(
+    no_degree_rate = No_Degree_p,
+    high_school_diploma_rate = High_School_Diploma_Only_p,
+    bachelors_or_higher_rate = Bachelors_Or_Higher_p
+  ) %>%
+  select(year, fips, annual_cases_per_capita, no_degree_rate, high_school_diploma_rate, bachelors_or_higher_rate)
+
+# View the resulting dataset
+head(covid_yearly_final_ed)
+```
+
+# Less than a HS Diploma Rate from 2017-21
+
+```{r}
+# Visualize the relationship between no_degree_rate and annual_cases_per_capita
+ggplot(covid_yearly_final_ed, aes(x = no_degree_rate, y = annual_cases_per_capita, color = year)) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Annual Cases per Capita by Less than a HS Diploma Rate for each County",
+       x = "Less than a High School Diploma Rate (%)",
+       y = "Annual Cases per Capita",
+       caption = "Data source: [Johns Hopkins, USDA]",
+       color = "Year") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# Bachelors Degree or Higher from 2017-21
+
+```{r}
+# Visualize the relationship between bachelors_or_higher_rate and annual_cases_per_capita
+ggplot(covid_yearly_final_ed, aes(x = bachelors_or_higher_rate, y = annual_cases_per_capita, color = year)) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Annual Cases per Capita by Bachelors Degree or Higher Rates for each County",
+       x = "Bachelors Degree or Higher Rates (%)",
+       y = "Annual Cases per Capita",
+       caption = "Data source: [Johns Hopkins, USDA]",
+       color = "Year") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+### Is there a differece between those who had a Bacehlor's Degree in 2021 vs those who had less than a HS diploma?
+
+```{r}
+education_cases_2021 <- covid_yearly_final_ed %>%
+  filter(year == 2021)
+
+# Create the plot
+ggplot(education_cases_2021) +
+  geom_point(aes(x = no_degree_rate, y = annual_cases_per_capita, color = "No Degree Rate")) +
+  geom_point(aes(x = bachelors_or_higher_rate, y = annual_cases_per_capita, color = "Bachelors or Higher Rate")) +
+  labs(
+    title = "Annual COVID-19 Cases per Capita vs. Education Rates for 2021",
+    x = "Education Rate (%)",
+    y = "Annual Cases per Capita"
+  ) +
+  scale_color_manual(values = c("No Degree Rate" = "red", "Bachelors or Higher Rate" = "blue"),
+                     name = "Education Level",
+                     labels = c("No Degree Rate", "Bachelors or Higher Rate")) +
+  theme_minimal()
+```
