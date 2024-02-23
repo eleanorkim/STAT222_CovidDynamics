@@ -1087,3 +1087,113 @@ model <- lm(annual_cases_per_capita ~ Med_HH_Income_Percent_of_State_Total_2021,
 slope <- coef(model)["Med_HH_Income_Percent_of_State_Total_2021"]
 print(paste("Slope of the regression line:", slope))
 ```
+
+### Education EDA
+
+```{r}
+covid_fract_daily_avg <- covid_fract_daily_avg %>%
+  mutate(
+    year = case_when(
+      week <= 48 ~ "2020",
+      week > 48 & week <= 101 ~ "2021",
+      TRUE ~ "2022"
+    )
+  )
+cumulative_cases_at_week_48 <- covid_fract_daily_avg %>%
+  filter(week == 48) %>%
+  select(fips, total_cases_at_week_48 = total_cases)
+
+cumulative_cases_at_week_101 <- covid_fract_daily_avg %>%
+  filter(week == 101) %>%
+  select(fips, total_cases_at_week_101 = total_cases)
+
+# Join the cumulative cases information for weeks 48 and 101 to the main dataset
+covid_yearly_prepared <- covid_fract_daily_avg %>%
+  left_join(cumulative_cases_at_week_48, by = "fips") %>%
+  left_join(cumulative_cases_at_week_101, by = "fips")
+
+# Calculate annual cases per capita after adjusting for cumulative totals
+covid_yearly_final <- covid_yearly_prepared %>%
+  group_by(fips, year) %>%
+  summarize(
+    last_week_cases = total_cases[which.max(week)],
+    avg_pop_last_week = avg_pop[which.max(week)],
+    total_cases_at_week_48 = first(total_cases_at_week_48),  # Removed na.rm = TRUE
+    total_cases_at_week_101 = first(total_cases_at_week_101),  # Removed na.rm = TRUE
+    .groups = 'drop'
+  ) %>%
+  mutate(
+    adjusted_total_cases = case_when(
+      year == "2020" ~ last_week_cases,
+      year == "2021" ~ last_week_cases - coalesce(total_cases_at_week_48, 0),  # Handle potential NA values
+      year == "2022" ~ last_week_cases - coalesce(total_cases_at_week_101, 0),  # Handle potential NA values
+      TRUE ~ NA_real_
+    ),
+    annual_cases_per_capita = adjusted_total_cases / avg_pop_last_week
+  ) %>%
+  select(-last_week_cases, -adjusted_total_cases)
+
+# join with education
+covid_yearly_final_ed <- covid_yearly_final %>%
+  left_join(education %>% select(FIPS_code = `Federal Information Processing Standard (FIPS) Code`, No_Degree_p = `Percent of adults with less than a high school diploma, 2017-21`, High_School_Diploma_Only_p = `Percent of adults with a high school diploma only, 2017-21`, Bachelors_Or_Higher_p = `Percent of adults with a bachelor's degree or higher, 2017-21`), by = c("fips" = "FIPS_code")) %>%
+  mutate(
+    no_degree_rate = No_Degree_p,
+    high_school_diploma_rate = High_School_Diploma_Only_p,
+    bachelors_or_higher_rate = Bachelors_Or_Higher_p
+  ) %>%
+  select(year, fips, annual_cases_per_capita, no_degree_rate, high_school_diploma_rate, bachelors_or_higher_rate)
+
+# View the resulting dataset
+head(covid_yearly_final_ed)
+```
+
+# Less than a HS Diploma Rate from 2017-21
+
+```{r}
+# Visualize the relationship between no_degree_rate and annual_cases_per_capita
+ggplot(covid_yearly_final_ed, aes(x = no_degree_rate, y = annual_cases_per_capita, color = year)) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Annual Cases per Capita by Less than a HS Diploma Rate for each County",
+       x = "Less than a High School Diploma Rate (%)",
+       y = "Annual Cases per Capita",
+       caption = "Data source: [Johns Hopkins, USDA]",
+       color = "Year") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# Bachelors Degree or Higher from 2017-21
+
+```{r}
+# Visualize the relationship between bachelors_or_higher_rate and annual_cases_per_capita
+ggplot(covid_yearly_final_ed, aes(x = bachelors_or_higher_rate, y = annual_cases_per_capita, color = year)) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Annual Cases per Capita by Bachelors Degree or Higher Rates for each County",
+       x = "Bachelors Degree or Higher Rates (%)",
+       y = "Annual Cases per Capita",
+       caption = "Data source: [Johns Hopkins, USDA]",
+       color = "Year") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+### Is there a differece between those who had a Bacehlor's Degree in 2021 vs those who had less than a HS diploma?
+
+```{r}
+education_cases_2021 <- covid_yearly_final_ed %>%
+  filter(year == 2021)
+
+# Create the plot
+ggplot(education_cases_2021) +
+  geom_point(aes(x = no_degree_rate, y = annual_cases_per_capita, color = "No Degree Rate")) +
+  geom_point(aes(x = bachelors_or_higher_rate, y = annual_cases_per_capita, color = "Bachelors or Higher Rate")) +
+  labs(
+    title = "Annual COVID-19 Cases per Capita vs. Education Rates for 2021",
+    x = "Education Rate (%)",
+    y = "Annual Cases per Capita"
+  ) +
+  scale_color_manual(values = c("No Degree Rate" = "red", "Bachelors or Higher Rate" = "blue"),
+                     name = "Education Level",
+                     labels = c("No Degree Rate", "Bachelors or Higher Rate")) +
+  theme_minimal()
+```
