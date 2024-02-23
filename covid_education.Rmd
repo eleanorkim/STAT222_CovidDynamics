@@ -154,6 +154,7 @@ education <- education[-1, ]
 # remove first row of data since it's for entirety of USA
 education <- education[-1, ]
 education <- education[, c("Federal Information Processing Standard (FIPS) Code", "Less than a high school diploma, 2017-21","High school diploma only, 2017-21", "Bachelor's degree or higher, 2017-21", "Percent of adults with less than a high school diploma, 2017-21","Percent of adults with a high school diploma only, 2017-21", "Percent of adults with a bachelor's degree or higher, 2017-21")]
+education <- education[, c("Federal Information Processing Standard (FIPS) Code", "Percent of adults with a high school diploma only, 2017-21", "Percent of adults with a bachelor's degree or higher, 2017-21")]
 #education
 
 head(education)
@@ -287,7 +288,12 @@ covid_yearly_final_ed <- covid_yearly_final %>%
     bachelors_or_higher_rate = Bachelors_Or_Higher_p
   ) %>%
   select(year, fips, annual_cases_per_capita, no_degree_rate, high_school_diploma_rate, bachelors_or_higher_rate)
-
+  left_join(education %>% select(FIPS_code = `Federal Information Processing Standard (FIPS) Code`, High_School_Diploma_Only = `Percent of adults with a high school diploma only, 2017-21`, Bachelors_Or_Higher = `Percent of adults with a bachelor's degree or higher, 2017-21`), by = c("fips" = "FIPS_code")) %>%
+  mutate(
+    high_school_diploma_rate = High_School_Diploma_Only,
+    bachelors_or_higher_rate = Bachelors_Or_Higher
+  ) %>%
+  select(year, fips, annual_cases_per_capita, high_school_diploma_rate, bachelors_or_higher_rate)
 # View the resulting dataset
 head(covid_yearly_final_ed)
 #nrow(covid_yearly_final)
@@ -300,6 +306,7 @@ head(covid_yearly_final_ed)
 # counties with no poverty data or missing Median Household Income data
 fips_no_ed_data <- covid_yearly_final_ed %>%
   filter(is.na(high_school_diploma_rate) | is.na(bachelors_or_higher_rate) | is.na(No_degree)) %>%
+  filter(is.na(high_school_diploma_rate) | is.na(bachelors_or_higher_rate)) %>%
   pull(fips) %>%
   unique()
 print(fips_no_ed_data)
@@ -351,6 +358,7 @@ ggplot(covid_yearly_final_ed, aes(x = bachelors_or_higher_rate, y = annual_cases
        color = "Year") +
   theme(plot.title = element_text(hjust = 0.5))
 ```
+<<<<<<< HEAD
 
 ### Is there a differece between those who had a Bacehlor's Degree in 2022 vs those who had less than a HS diploma?
 
