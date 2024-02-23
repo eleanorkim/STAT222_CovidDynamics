@@ -595,7 +595,9 @@ Output: weekly_spatial_metrics
 
 ```{r}
 # Split list into 10 subsets
-list_of_subsets <- split(list_Cr, rep(1:10, each = 15))
+week_subset = list_Cr[5:148]
+
+list_of_subsets <- split(week_subset, rep(1:12, each = 12))
 
 # Create a list to store matrix_Cr for each subset
 list_of_matrix_Cr <- list()
@@ -611,13 +613,14 @@ for (i in seq_along(list_of_subsets)) {
   list_of_matrix_Cr[[i]] <- matrix_Cr
 }
 
-# Create 10 plots
-par(mfrow = c(2, 5))  # Adjust the layout according to your preference
+# Create 12 plots
+par(mfrow = c(2, 3))  # Adjust the layout according to your preference
+par(mfrow = c(2, 3))
 
 for (i in seq_along(list_of_matrix_Cr)) {
   # Plot using matplot
   matplot(r_lower, list_of_matrix_Cr[[i]], type = "l", col = 1:15, lty = 1:15,
-          xlab = "r (km)", ylab = "C(r)", main = paste("Weeks", (i - 1) * 15 + 1, "-", i * 15), col.axis = "blue")
+          xlab = "r (km)", ylab = "C(r)", main = paste("Weeks", (i - 1) * 12 + 9, "-", i * 12), col.axis = "blue")
 }
 ```
 
