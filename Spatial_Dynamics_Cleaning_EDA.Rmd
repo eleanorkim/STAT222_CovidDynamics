@@ -15,6 +15,7 @@ library(dplyr)
 library(geosphere)
 library(sandwich)
 library(lmtest)
+library(ggplot2)
 ```
 
 # Data Cleaning
@@ -847,7 +848,6 @@ print(tier_summary)
 ```
 
 ```{r}
-library(dplyr)
 
 county_week <- county_week %>%
   mutate(
@@ -929,9 +929,6 @@ print(sapply(covid_yearly_final, function(x) sum(is.na(x))))
 # Poverty Rate Analysis for All Years
 
 ```{r}
-library(ggplot2)
-library(dplyr)
-
 # Assuming covid_fract_daily_avg_pov_filtered1 is already prepared
 covid_fract_daily_avg_pov_filtered1 <- covid_yearly_final %>%
   filter(!is.na(avg_pov_rate))
@@ -961,8 +958,6 @@ print(paste("Slope of the regression line:", slope))
 # Median Household Income Analysis for All Years
 
 ```{r}
-library(ggplot2)
-library(dplyr)
 
 # Assuming covid_fract_daily_avg_pov_filtered2 is prepared
 covid_fract_daily_avg_pov_filtered2 <- covid_yearly_final %>%
