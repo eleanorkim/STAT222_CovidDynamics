@@ -187,6 +187,9 @@ create_daily_avg_by_week <- function(df, start_date){
     # drop rows that have NA's for fips code
     df <- df[!is.na(df$fips), ]
     
+    # add county name column
+    df$county = as.character(df$county)
+    
     # Convert the date column to a Date object
     df$date <- as.Date(df$date, format = "%Y-%m-%d")
 
@@ -198,7 +201,7 @@ create_daily_avg_by_week <- function(df, start_date){
     df$week <- as.integer(ceiling(as.numeric(df$date - start_date + 1) / 7))
 
     # Group by FIPS code and week, then summarize cases
-    daily_avg <- df %>% group_by(fips, week) %>%
+    daily_avg <- df %>% group_by(fips, county, week) %>%
         summarize(total_cases = sum(cases), 
             avg_daily_cases = sum(cases) / 7,
             total_deaths = sum(deaths),
@@ -249,7 +252,7 @@ head(population)
 
 covid_daily_avg_pop <- covid_daily_avg %>%
     left_join(population, by = c("fips" = "FIPStxt")) %>%
-    select(fips, week, total_cases, total_deaths, 
+    select(fips, county, week, total_cases, total_deaths, 
            avg_daily_cases, avg_daily_deaths, start_date, avg_pop)
 
 head(covid_daily_avg_pop)
@@ -276,7 +279,7 @@ county_week <- covid_daily_avg_pop %>%
   # divide by population
   mutate(fract_avg_daily_cases = avg_daily_cases / avg_pop,
          fract_avg_daily_deaths = avg_daily_deaths / avg_pop) %>%
-  select(fips, week, total_cases, total_deaths, avg_daily_cases, avg_daily_deaths,
+  select(fips, county, week, total_cases, total_deaths, avg_daily_cases, avg_daily_deaths,
            fract_avg_daily_cases, fract_avg_daily_deaths,start_date, avg_pop)
 
 nrow(county_week)
@@ -303,12 +306,13 @@ county_week <- county_week %>%
 
 nrow(county_week) # 357104
 head(county_week)
+# write.csv(county_week, "county_week.csv")
 ```
 
 Output: county_week
   - county and week panel data set with covid stats
-  - 357104 rows (county-week) x 10 columns (time columns, covid cases)
-  - features: fips, week, total_cases, total_deaths, fract_avg_daily_cases (this is Z_T(i) in the paper), start_date, avg_pop, month_year, X_T ("the extent to which the relative number of cases increased or decreased on a given week T compared to the previous week T-1")
+  - 357104 rows (county-week) x 12 columns (time columns, covid cases)
+  - features: fips, county, week, total_cases, total_deaths, fract_avg_daily_cases (this is Z_T(i) in the paper), start_date, avg_pop, month_year, X_T ("the extent to which the relative number of cases increased or decreased on a given week T compared to the previous week T-1")
 
 ### Aggregate by month (optional)
 
@@ -380,6 +384,7 @@ covid_counties_1_2 = covid_counties_1_2[!is.na(covid_counties_1_2$X_T_1) & !is.n
 # Inspect
 nrow(covid_counties_1_2) # 1727668
 head(covid_counties_1_2)
+# write.csv(covid_counties_1_2, "covid_counties_1_2.csv")
 ```
 
 Output: covid_counties_1_2
@@ -451,7 +456,6 @@ abline(v = xi_2, col = "red", lty = 2)
 
 ```{r}
 # Takes a long time!
-
 list_Cr = list()
 cor_lengths_2 = c()
 
@@ -664,7 +668,6 @@ robust_test <- coeftest(lm_model, vcov = vcovHC(lm_model, type = "HC1")) # still
 ### Aarushi's Section (more data cleaning + Poverty_Covid EDA)
 
 ```{r}
-library(dplyr)
 
 # Group by week and then summarize the other columns for entire covid data
 weekly_summary <- covid_daily_avg %>%
@@ -678,8 +681,6 @@ weekly_summary <- covid_daily_avg %>%
 
 # View the summarized data
 print(weekly_summary)
-
-library(ggplot2)
 
 # Plotting total cases and total deaths for each week
 ggplot(weekly_summary, aes(x = week)) +
@@ -719,8 +720,6 @@ ggplot(weekly_summary1, aes(x = week)) +
 
 
 ```{r}
-library(dplyr)
-
 # Group by week and then summarize the other columns for covid data per capital
 weekly_summary_perpop <- county_week %>%
   group_by(week) %>%
@@ -735,8 +734,6 @@ weekly_summary_perpop <- county_week %>%
 
 # View the summarized data
 print(weekly_summary_perpop)
-
-library(ggplot2)
 
 # Plotting total cases and total deaths for each week
 ggplot(weekly_summary_perpop, aes(x = week)) +
@@ -826,8 +823,6 @@ head(pov)
 ```
 
 ```{r}
-# Load dplyr for data manipulation
-library(dplyr)
 
 # Assuming pov is your dataframe with the Tier_Poverty column and potentially NA values
 
