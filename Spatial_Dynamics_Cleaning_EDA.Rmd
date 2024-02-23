@@ -1,5 +1,6 @@
 ---
-title: "Spatial_Dynamics_Cleaning_EDA"
+title: "Spatial Dynamics - Cleaning and Exploratory Data Analysis"
+subtitle: "Aarushi Somani, Eleanor Kim, Lauren Murai, Meichen Chen"
 output:
   pdf_document: default
   html_document: default
@@ -649,7 +650,7 @@ plot( log(weekly_spatial_metrics$cor_lengths_2), log(weekly_spatial_metrics$next
 lm_model <- lm(log(weekly_spatial_metrics$next_week_marginal_cases) ~ log(weekly_spatial_metrics$cor_lengths_2), data = weekly_spatial_metrics)
 summary(lm_model)
 
-# a 10% increase in correlation length (km) corresponds to a 7.36% change in cases in the following week
+# a 10% increase in correlation length (km) corresponds to a 9.402% change in cases in the following week
 # there is heteroskedasticity
 
 # Calculate robust standard errors
