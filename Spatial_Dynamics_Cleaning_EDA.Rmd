@@ -1090,6 +1090,23 @@ print(paste("Slope of the regression line:", slope))
 
 ### Education EDA
 
+### Clean Education Data (from USDA) 2021
+
+```{r}
+education <- education_raw[-(1:2), ]
+
+# Set the column names of to be the values of the first row
+colnames(education) <- as.character(unlist(education[1, ]))
+education <- education[-1, ]
+# remove first row of data since it's for entirety of USA
+education <- education[-1, ]
+education <- education[, c("Federal Information Processing Standard (FIPS) Code", "Percent of adults with less than a high school diploma, 2017-21","Percent of adults with a high school diploma only, 2017-21", "Percent of adults with a bachelor's degree or higher, 2017-21")]
+#education
+
+head(education)
+#nrow(education)
+```
+
 ```{r}
 covid_fract_daily_avg <- covid_fract_daily_avg %>%
   mutate(
