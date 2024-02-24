@@ -1028,7 +1028,74 @@ unemployment$avg_unemploy_rate <- rowMeans(unemployment[, 2:4], na.rm = TRUE)
 
 head(unemployment)
 ```
+
 ### Unemployment EDA
+
+```{r}
+# Create a copy of the unemployment dataframe 
+unemploy <- unemployment 
+
+# Convert necessary columns to numeric if not already 
+# unemploy$avg_unemploy_rate <- as.numeric(as.character(unemploy$avg_unemploy_rate))
+# unemploy$Median_Household_Income_2021 <- as.numeric(as.character(unemploy$Median_Household_Income_2021))
+
+# Summary statistics for unemployment rate and median household income 
+summary_unemploy_rate <- summary(unemploy$avg_unemploy_rate)
+summary_medhhinc <- summary(unemploy$Median_Household_Income_2021)
+
+# Print summary statistics
+print(summary_unemploy_rate)
+print(summary_medhhinc)
+
+# Function to categorize into tiers based on PCTPOVALL_2021
+# get_tier_povall <- function(x) {
+#  quantiles <- quantile(x, probs = c(1/3, 2/3), na.rm = TRUE)
+#  tier <- ifelse(x <= quantiles[1], 1, ifelse(x <= quantiles[2], 2, 3))
+#  return(tier)
+#}
+
+# Apply the tier function to unemployment rate and median household income 
+unemploy$Tier_Unemploy <- get_tier_povall(unemploy$avg_unemploy_rate)
+unemploy$Tier_MedHHInc <- get_tier_povall(unemploy$Median_Household_Income_2021)
+# View the first few rows to check the new column
+head(unemploy)
+
+# hist(unemploy$avg_unemploy_rate)
+```
+
+```{r}
+# Create summary table with NA values ignored
+tier_summary_unemploy <- unemploy %>%
+  filter(!is.na(Tier_Unemploy)) %>% # Ignore rows where Tier_Poverty is NA
+  group_by(Tier_Unemploy) %>%
+  summarise(
+    Count = n(), # Sum of counties in that tier
+    Mean_Unemployment_Rate = mean(avg_unemploy_rate, na.rm = TRUE), # Mean poverty rate, ignoring NA
+    Median_Unemployment_Rate = median(avg_unemploy_rate, na.rm = TRUE), # Median poverty rate, ignoring NA
+    Min_Unemployment_Rate = min(avg_unemploy_rate, na.rm = TRUE), # Minimum poverty rate, ignoring NA
+    Max_Unemployment_Rate = max(avg_unemploy_rate, na.rm = TRUE) # Maximum poverty rate, ignoring NA
+  )
+
+# Print the summary table
+print(tier_summary_unemploy)
+```
+
+```{r}
+# Create summary table with NA values ignored
+tier_summary_MedHHInc <- unemploy %>%
+  filter(!is.na(Tier_MedHHInc)) %>% # Ignore rows where Tier_Poverty is NA
+  group_by(Tier_MedHHInc) %>%
+  summarise(
+    Count = n(), # Sum of counties in that tier
+    Mean_MedHHInc = mean(Median_Household_Income_2021, na.rm = TRUE), 
+    Median_MedHHInc = median(Median_Household_Income_2021, na.rm = TRUE), 
+    Min_MedHHInc = min(Median_Household_Income_2021, na.rm = TRUE), 
+    Max_MedHHInc = max(Median_Household_Income_2021, na.rm = TRUE)
+  )
+
+# Print the summary table
+print(tier_summary_MedHHInc)
+```
 
 ```{r}
 # Join with unemployment data 
@@ -1037,7 +1104,6 @@ covid_yearly_final_unemployment <- covid_yearly_final %>%
     select(-"Unemployment_rate_2020", -"Unemployment_rate_2021",
            -"Unemployment_rate_2022", -"Median_Household_Income_2021.x")
 ```
-
 
 ```{r}
 # counties with no unemployment data 
@@ -1168,7 +1234,7 @@ ggplot(covid_yearly_final_ed, aes(x = bachelors_or_higher_rate, y = annual_cases
   theme(plot.title = element_text(hjust = 0.5))
 ```
 
-### Is there a differece between those who had a Bacehlor's Degree in 2021 vs those who had less than a HS diploma?
+### Is there a difference between those who had a Bachelor's Degree in 2021 vs those who had less than a HS diploma?
 
 ```{r}
 education_cases_2021 <- covid_yearly_final_ed %>%
