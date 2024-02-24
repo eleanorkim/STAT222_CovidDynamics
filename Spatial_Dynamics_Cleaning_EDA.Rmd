@@ -16,6 +16,7 @@ library(geosphere)
 library(sandwich)
 library(lmtest)
 library(ggplot2)
+library(openxlsx)
 ```
 
 # Data Cleaning
@@ -867,10 +868,22 @@ tier_summary <- pov %>%
 
 # Print the summary table
 print(tier_summary)
+
+# save poverty tiers data to excel
+wb <- createWorkbook()
+
+# Add two sheets to the workbook
+addWorksheet(wb, "PovertyTiers")
+addWorksheet(wb, "PovertyTiersSummary")
+
+# Write data frames to separate sheets
+writeData(wb, sheet = "PovertyTiers", pov)
+writeData(wb, sheet = "PovertyTiersSummary", tier_summary)
+
+saveWorkbook(wb, "Poverty_Tiers.xlsx", overwrite = TRUE)
 ```
 
 ```{r}
-
 county_week <- county_week %>%
   mutate(
     year = case_when(
@@ -1028,74 +1041,7 @@ unemployment$avg_unemploy_rate <- rowMeans(unemployment[, 2:4], na.rm = TRUE)
 
 head(unemployment)
 ```
-
 ### Unemployment EDA
-
-```{r}
-# Create a copy of the unemployment dataframe 
-unemploy <- unemployment 
-
-# Convert necessary columns to numeric if not already 
-# unemploy$avg_unemploy_rate <- as.numeric(as.character(unemploy$avg_unemploy_rate))
-# unemploy$Median_Household_Income_2021 <- as.numeric(as.character(unemploy$Median_Household_Income_2021))
-
-# Summary statistics for unemployment rate and median household income 
-summary_unemploy_rate <- summary(unemploy$avg_unemploy_rate)
-summary_medhhinc <- summary(unemploy$Median_Household_Income_2021)
-
-# Print summary statistics
-print(summary_unemploy_rate)
-print(summary_medhhinc)
-
-# Function to categorize into tiers based on PCTPOVALL_2021
-# get_tier_povall <- function(x) {
-#  quantiles <- quantile(x, probs = c(1/3, 2/3), na.rm = TRUE)
-#  tier <- ifelse(x <= quantiles[1], 1, ifelse(x <= quantiles[2], 2, 3))
-#  return(tier)
-#}
-
-# Apply the tier function to unemployment rate and median household income 
-unemploy$Tier_Unemploy <- get_tier_povall(unemploy$avg_unemploy_rate)
-unemploy$Tier_MedHHInc <- get_tier_povall(unemploy$Median_Household_Income_2021)
-# View the first few rows to check the new column
-head(unemploy)
-
-# hist(unemploy$avg_unemploy_rate)
-```
-
-```{r}
-# Create summary table with NA values ignored
-tier_summary_unemploy <- unemploy %>%
-  filter(!is.na(Tier_Unemploy)) %>% # Ignore rows where Tier_Poverty is NA
-  group_by(Tier_Unemploy) %>%
-  summarise(
-    Count = n(), # Sum of counties in that tier
-    Mean_Unemployment_Rate = mean(avg_unemploy_rate, na.rm = TRUE), # Mean poverty rate, ignoring NA
-    Median_Unemployment_Rate = median(avg_unemploy_rate, na.rm = TRUE), # Median poverty rate, ignoring NA
-    Min_Unemployment_Rate = min(avg_unemploy_rate, na.rm = TRUE), # Minimum poverty rate, ignoring NA
-    Max_Unemployment_Rate = max(avg_unemploy_rate, na.rm = TRUE) # Maximum poverty rate, ignoring NA
-  )
-
-# Print the summary table
-print(tier_summary_unemploy)
-```
-
-```{r}
-# Create summary table with NA values ignored
-tier_summary_MedHHInc <- unemploy %>%
-  filter(!is.na(Tier_MedHHInc)) %>% # Ignore rows where Tier_Poverty is NA
-  group_by(Tier_MedHHInc) %>%
-  summarise(
-    Count = n(), # Sum of counties in that tier
-    Mean_MedHHInc = mean(Median_Household_Income_2021, na.rm = TRUE), 
-    Median_MedHHInc = median(Median_Household_Income_2021, na.rm = TRUE), 
-    Min_MedHHInc = min(Median_Household_Income_2021, na.rm = TRUE), 
-    Max_MedHHInc = max(Median_Household_Income_2021, na.rm = TRUE)
-  )
-
-# Print the summary table
-print(tier_summary_MedHHInc)
-```
 
 ```{r}
 # Join with unemployment data 
@@ -1104,6 +1050,7 @@ covid_yearly_final_unemployment <- covid_yearly_final %>%
     select(-"Unemployment_rate_2020", -"Unemployment_rate_2021",
            -"Unemployment_rate_2022", -"Median_Household_Income_2021.x")
 ```
+
 
 ```{r}
 # counties with no unemployment data 
@@ -1171,7 +1118,7 @@ print(paste("Slope of the regression line:", slope))
 
 ### Education EDA
 
-### Clean Education Data (from USDA) 2021
+### Clean Education Data (from USDA) 2017-2021
 
 ```{r}
 education_raw <- read_xlsx("Education.xlsx")
@@ -1184,24 +1131,38 @@ education <- education[-1, ]
 education <- education[-1, ]
 education <- education[, c("Federal Information Processing Standard (FIPS) Code", "Percent of adults with less than a high school diploma, 2017-21","Percent of adults with a high school diploma only, 2017-21", "Percent of adults with a bachelor's degree or higher, 2017-21")]
 #education
+colnames(education) <- c("fips", "no_degree_rate", "high_school_diploma_rate", "bachelors_or_higher_rate")
+
+class(education$no_degree_rate) <- "numeric"
+class(education$high_school_diploma_rate) <- "numeric"
+class(education$bachelors_or_higher_rate) <- "numeric"
 
 head(education)
 #nrow(education)
 ```
+# Identifying counties with missing data
 
 ```{r}
-# join with education
-covid_yearly_final_ed <- covid_yearly_final %>%
-  left_join(education %>% select(FIPS_code = `Federal Information Processing Standard (FIPS) Code`, No_Degree_p = `Percent of adults with less than a high school diploma, 2017-21`, High_School_Diploma_Only_p = `Percent of adults with a high school diploma only, 2017-21`, Bachelors_Or_Higher_p = `Percent of adults with a bachelor's degree or higher, 2017-21`), by = c("fips" = "FIPS_code")) %>%
-  mutate(
-    no_degree_rate = No_Degree_p,
-    high_school_diploma_rate = High_School_Diploma_Only_p,
-    bachelors_or_higher_rate = Bachelors_Or_Higher_p
-  ) %>%
-  select(year, fips, annual_cases_per_capita, no_degree_rate, high_school_diploma_rate, bachelors_or_higher_rate)
+# counties with no education date
+fips_no_ed_data <- covid_yearly_final_ed %>%
+  filter(is.na(bachelors_or_higher_rate) | is.na(no_degree_rate)) %>%
+  pull(fips) %>%
+  unique()
+print(fips_no_ed_data)
+
+print(sapply(covid_yearly_final_ed, function(x) sum(is.na(x))))
+```
+
+```{r}
+# join with education with rest of covid socioeconomic data
+covid_yearly_final_ed <- covid_fract_daily_avg_income_percent_filtered %>%
+  left_join(education %>% select(FIPS_code = `fips`, no_degree_rate = `no_degree_rate`,  bachelors_or_higher_rate = `bachelors_or_higher_rate`), by = c("fips" = "FIPS_code")) 
 
 # View the resulting dataset
-head(covid_yearly_final_ed)
+covid_yearly_final_ed
+
+# save all socioeconomic factors data into an excel sheet
+write.xlsx(covid_yearly_final_ed, "Processed_Socioeconomic.xlsx", rowNames = FALSE)
 ```
 
 # Less than a HS Diploma Rate from 2017-21
@@ -1210,6 +1171,7 @@ head(covid_yearly_final_ed)
 # Visualize the relationship between no_degree_rate and annual_cases_per_capita
 ggplot(covid_yearly_final_ed, aes(x = no_degree_rate, y = annual_cases_per_capita, color = year)) +
   geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "black") +
   theme_minimal() +
   labs(title = "Annual Cases per Capita by Less than a HS Diploma Rate for each County",
        x = "Less than a High School Diploma Rate (%)",
@@ -1217,6 +1179,13 @@ ggplot(covid_yearly_final_ed, aes(x = no_degree_rate, y = annual_cases_per_capit
        caption = "Data source: [Johns Hopkins, USDA]",
        color = "Year") +
   theme(plot.title = element_text(hjust = 0.5))
+
+# Fit a linear model for all data to calculate the slope
+model <- lm(annual_cases_per_capita ~ no_degree_rate, data = covid_yearly_final_ed)
+
+# Print the slope of the regression line
+slope <- coef(model)["no_degree_rate"]
+print(paste("Slope of the regression line:", slope))
 ```
 
 # Bachelors Degree or Higher from 2017-21
@@ -1225,6 +1194,7 @@ ggplot(covid_yearly_final_ed, aes(x = no_degree_rate, y = annual_cases_per_capit
 # Visualize the relationship between bachelors_or_higher_rate and annual_cases_per_capita
 ggplot(covid_yearly_final_ed, aes(x = bachelors_or_higher_rate, y = annual_cases_per_capita, color = year)) +
   geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "black") +
   theme_minimal() +
   labs(title = "Annual Cases per Capita by Bachelors Degree or Higher Rates for each County",
        x = "Bachelors Degree or Higher Rates (%)",
@@ -1232,9 +1202,16 @@ ggplot(covid_yearly_final_ed, aes(x = bachelors_or_higher_rate, y = annual_cases
        caption = "Data source: [Johns Hopkins, USDA]",
        color = "Year") +
   theme(plot.title = element_text(hjust = 0.5))
+
+# Fit a linear model for all data to calculate the slope
+model <- lm(annual_cases_per_capita ~ bachelors_or_higher_rate, data = covid_yearly_final_ed)
+
+# Print the slope of the regression line
+slope <- coef(model)["bachelors_or_higher_rate"]
+print(paste("Slope of the regression line:", slope))
 ```
 
-### Is there a difference between those who had a Bachelor's Degree in 2021 vs those who had less than a HS diploma?
+# Is there a differece between those who had a Bacehlor's Degree in 2021 vs those who had less than a HS diploma?
 
 ```{r}
 education_cases_2021 <- covid_yearly_final_ed %>%
