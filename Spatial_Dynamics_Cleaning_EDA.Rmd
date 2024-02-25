@@ -1090,6 +1090,19 @@ tier_summary_unemploy <- unemploy %>%
 
 # Print the summary table
 print(tier_summary_unemploy)
+
+# save poverty tiers data to excel
+wb <- createWorkbook()
+
+# Add two sheets to the workbook
+addWorksheet(wb, "UnemployTier")
+addWorksheet(wb, "UnemployTierSumm")
+
+# Write data frames to separate sheets
+writeData(wb, sheet = "UnemployTier", unemploy)
+writeData(wb, sheet = "UnemployTierSumm", tier_summary_unemploy)
+
+saveWorkbook(wb, "Unemply_Tiers.xlsx", overwrite = TRUE)
 ```
 
 ```{r}
@@ -1241,6 +1254,19 @@ tier_summary_bachelors <- ed %>%
 
 # Print the summary table
 print(tier_summary_bachelors)
+
+# save poverty tiers data to excel
+wb <- createWorkbook()
+
+# Add two sheets to the workbook
+addWorksheet(wb, "BachelorsTier")
+addWorksheet(wb, "BachelorsTierSumm")
+
+# Write data frames to separate sheets
+writeData(wb, sheet = "BachelorsTier", ed)
+writeData(wb, sheet = "BachelorsTierSumm", tier_summary_bachelors)
+
+saveWorkbook(wb, "Education_Tiers.xlsx", overwrite = TRUE)
 ```
 
 # Identifying counties with missing data
