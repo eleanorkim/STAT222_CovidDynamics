@@ -15,6 +15,7 @@ library(dplyr)
 library(geosphere)
 library(sandwich)
 library(lmtest)
+library(tidyr)
 library(ggplot2)
 ```
 
@@ -143,14 +144,7 @@ pairwise_counties$r_i <- cut(
 
 # Add r col
 pairwise_counties$r <- round(r_upper[pairwise_counties$r_i],2)
-
-# Inspect distribution of r_i
 pairwise_counties$r_i = as.numeric(pairwise_counties$r_i)
-hist(pairwise_counties$r_i)
-table(pairwise_counties$r_i)
-
-# Inspect data
-head(pairwise_counties)
 ```
 
 Output: pairwise_counties
@@ -167,6 +161,7 @@ Input data (4): us-counties-2020.csv, us-counties-2021.csv, us-counties-2022.csv
 covid2020_raw <- read.csv("us-counties-2020.csv")
 covid2021_raw <- read.csv("us-counties-2021.csv")
 covid2022_raw <- read.csv("us-counties-2022.csv")
+covid2023_raw <- read.csv("us-counties-2023.csv")
 ```
 
 ```{r}
@@ -189,6 +184,7 @@ create_daily_avg_by_week <- function(df, start_date){
     
     # add county name column
     df$county = as.character(df$county)
+    df$state = as.character(df$state)
     
     # Convert the date column to a Date object
     df$date <- as.Date(df$date, format = "%Y-%m-%d")
@@ -201,7 +197,7 @@ create_daily_avg_by_week <- function(df, start_date){
     df$week <- as.integer(ceiling(as.numeric(df$date - start_date + 1) / 7))
 
     # Group by FIPS code and week, then summarize cases
-    daily_avg <- df %>% group_by(fips, county, week) %>%
+    daily_avg <- df %>% group_by(fips, county, state, week) %>%
         summarize(total_cases = sum(cases), 
             avg_daily_cases = sum(cases) / 7,
             total_deaths = sum(deaths),
@@ -212,16 +208,43 @@ create_daily_avg_by_week <- function(df, start_date){
 }
 
 # combine all into one dataset 
-covid_raw = rbind(covid2020_raw, covid2021_raw, covid2022_raw)
+covid_raw = rbind(covid2020_raw, covid2021_raw, covid2022_raw, covid2023_raw)
 start_date <- as.Date("2020-01-26")
 covid_daily_avg <- create_daily_avg_by_week(covid_raw, start_date)
 
 # Add start date of week column
 covid_daily_avg$start_date <- as.Date("2020-02-01") + (covid_daily_avg$week - 1) * 7
 
+# Create region column
+assign_region <- function(state) {
+  northeast_states <- c('Connecticut', 'Maine', 'Massachusetts', 'New Hampshire', 'Rhode Island', 'Vermont', 'New York', 'New Jersey', 'Pennsylvania')
+  west_states <- c('Washington', 'Oregon', 'California', 'Nevada', 'Idaho', 'Montana', 'Wyoming', 'Utah', 'Colorado', 'New Mexico', 'Arizona', 'Alaska', 'Hawaii')
+  south_states <- c('Texas', 'Oklahoma', 'Arkansas', 'Louisiana', 'Mississippi', 'Alabama', 'Tennessee', 'Kentucky', 'Florida', 'Georgia', 'South Carolina', 'North Carolina', 'Virginia', 'West Virginia', 'Maryland', 'Delaware', 'District of Columbia')
+  midwest_states <- c('North Dakota', 'South Dakota', 'Nebraska', 'Kansas', 'Minnesota', 'Iowa', 'Missouri', 'Wisconsin', 'Illinois', 'Indiana', 'Ohio', 'Michigan')
+
+  if (state %in% northeast_states) {
+    return('Northeast')
+  } else if (state %in% west_states) {
+    return('West')
+  } else if (state %in% south_states) {
+    return('South')
+  } else if (state %in% midwest_states) {
+    return('Midwest')
+  } else {
+    return('Unknown')
+  }
+}
+
+covid_daily_avg <- covid_daily_avg %>%
+  mutate(region = sapply(state, assign_region))
+
+# Remove unknown region counties (PR)
+states_unknwon = filter(covid_daily_avg, region== "Unknown")$state
+covid_daily_avg = filter(covid_daily_avg, region!= "Unknown")
+
 head(covid_daily_avg)
 tail(covid_daily_avg)
-covid_daily_avg
+
 ```
 
 ```{r}
@@ -252,19 +275,10 @@ head(population)
 
 covid_daily_avg_pop <- covid_daily_avg %>%
     left_join(population, by = c("fips" = "FIPStxt")) %>%
-    select(fips, county, week, total_cases, total_deaths, 
+    select(fips, county, region, week, total_cases, total_deaths, 
            avg_daily_cases, avg_daily_deaths, start_date, avg_pop)
 
 head(covid_daily_avg_pop)
-```
-
-```{r}
-# counties with no population data 
-fips_no_pop_data <- covid_daily_avg_pop %>%
-  filter(is.na(avg_pop)) %>%
-  pull(fips) %>%
-  unique()
-print(fips_no_pop_data)
 ```
 
 ```{r}
@@ -279,18 +293,13 @@ county_week <- covid_daily_avg_pop %>%
   # divide by population
   mutate(fract_avg_daily_cases = avg_daily_cases / avg_pop,
          fract_avg_daily_deaths = avg_daily_deaths / avg_pop) %>%
-  select(fips, county, week, total_cases, total_deaths, avg_daily_cases, avg_daily_deaths,
+  select(fips, county, region, week, total_cases, total_deaths, avg_daily_cases, avg_daily_deaths,
            fract_avg_daily_cases, fract_avg_daily_deaths,start_date, avg_pop)
 
 nrow(county_week)
 head(county_week)
 ```
 
-```{r}
-# how many counties are there?
-length(unique(county_week$fips))
-# doesn't match with 2411 counties from paper 
-```
 
 ### Detrend data: Add X_T(i) column
 
@@ -306,6 +315,7 @@ county_week <- county_week %>%
 
 nrow(county_week) # 357104
 head(county_week)
+county_week$county_name <- paste(county_week$county, "County", sep = " ")
 # write.csv(county_week, "county_week.csv")
 ```
 
@@ -314,47 +324,6 @@ Output: county_week
   - 357104 rows (county-week) x 12 columns (time columns, covid cases)
   - features: fips, county, week, total_cases, total_deaths, fract_avg_daily_cases (this is Z_T(i) in the paper), start_date, avg_pop, month_year, X_T ("the extent to which the relative number of cases increased or decreased on a given week T compared to the previous week T-1")
 
-### Aggregate by month (optional)
-
-```{r}
-# Aggregate from weeks to months
-
-# Convert start_date to date class
-county_week$start_date <- as.Date(county_week$start_date)
-
-# Extract month and year from start_date
-county_week <- county_week %>%
-  mutate(month_year = format(start_date, "%Y-%m"))
-
-# Aggregate by fips and month, calculating means for numeric columns
-county_month <- county_week %>%
-  group_by(fips, month_year) %>%
-  summarise(
-    total_cases = mean(total_cases),
-    total_deaths = mean(total_deaths),
-    fract_avg_daily_cases = mean(fract_avg_daily_cases),
-    fract_avg_daily_deaths = mean(fract_avg_daily_deaths),
-    avg_pop = mean(avg_pop)
-  ) %>%
-  ungroup()
-
-# Sort the data frame by fips and month
-county_month <- county_month[order(county_month$fips, county_month$month_year), ]
-
-# Create X_T column <-- is this right?
-county_month <- county_month %>%
-  group_by(fips) %>%
-  mutate(X_T = fract_avg_daily_cases - lag(fract_avg_daily_cases, default = 0))
-
-# Inspect
-nrow(county_month)
-head(county_month)
-```
-
-Output: county_month
-  - county and month panel data set with covid stats
-  - 82936 rows (county-week) x 10 columns (time columns, covid cases)
-  - features: fips, month_year, total_cases, total_deaths, fract_avg_daily_cases (averaged over weeks by month), start_date, avg_pop, X_T (average X_T for the month "the extent to which the relative number of cases increased or decreased on a given week T compared to the previous week T-1")
 
 ## Merge X_T's onto pairwise county data for fixed T for each pair county1-county2
 
@@ -424,10 +393,11 @@ for (i in 1:n) {
 # Correlation function
   numerator = sum(X_T_1_r*X_T_2_r - m_1[i]*m_2[i])/length(X_T_1_r)
   denominator = sqrt(s2_1[i]*s2_2[i])
-  C_r_T[i]= numerator/denominator # same as cor(X_T_1, X_T_2)
+  C_r_T[i] = numerator/denominator # same as 
+  C_r_T[i] = cor(X_T_1_r, X_T_2_r)
   
   # is C_r_T significant?
-  significant[i] = (cor.test(X_T_1_r, X_T_2_r, method = "spearman")$p.value < .000001)
+  significant[i] = (cor.test(X_T_1_r, X_T_2_r, method = "spearman")$p.value < .01)
 
 }
 
@@ -446,95 +416,111 @@ Output:
 
 ```{r}
 # Plot C(r) against r
-plot(r_lower, C_r_T, type = "l", xlab = "distance in km (r)", ylab = "C(r)", main = paste("Week", T))
+plot(r_lower, C_r_T, type = "l", xlab = "Distance Between County Centroids r (km)", ylab = "Spatial Correlation in Covid Cases C(r)", main = paste("Spatial Correlation and Correlation Length in Week", T), col="blue", cex.lab=.8)
 # Add vertical line for xi correlation length (min r where C(r) = 0)
 abline(v = xi_2, col = "red", lty = 2) 
-```
+abline(h = 0, col = "black", lty = 1) 
+legend("topright", legend = c("C(r)",expression(paste(argmin[r]~C(r) == 0))), col = c("blue", "red"), lty = c(1, 2))
 
+
+```
 
 ## Calculate Spatial Correlations and Correlation Lengths for a subset of weeks
 
 ```{r}
-# Takes a long time!
-list_Cr = list()
-cor_lengths_2 = c()
+# R always terminates when I do a for loop so i just run this chunk 4 times for each region
+# table(county_week$region)
+select_region = "West"
+subset_pairwise_counties = filter(pairwise_counties, region_1 == select_region)
+subset_county_week = filter(county_week, region == select_region)
+
+#Initialize vectors
+list_Cr_W = c()
+cor_lengths_W = c()
 
 # up until week 5 we have < 22 observations
-
-# Set week subset
 week_start = 6
-week_end = 10
-
+week_end = 165
+    
+# Iterate over each week
 for (w in week_start:week_end) {
-  # Subset data by fixing week T
-  county_week_T = filter(county_week, week == w)
+    # Subset covid data by fixing week T
+    county_week_T = filter(subset_county_week, week == w)
   
-  # Merge data frames based on fips1
-  counties_covid_1 <- merge(pairwise_counties, county_week_T[, c("fips", "X_T")], by.x = "fips1", by.y = "fips", all.x = TRUE, suffixes = c("", "_1"))
-  names(counties_covid_1)[names(counties_covid_1) == "X_T"] <- "X_T_1"
+    # Merge data frames based on fips1
+    counties_covid_1 <- merge(subset_pairwise_counties, county_week_T[, c("fips", "X_T")], by.x = "fips1", by.y = "fips", all.x = TRUE, suffixes = c("", "_1"))
+    names(counties_covid_1)[names(counties_covid_1) == "X_T"] <- "X_T_1"
+    
+    # Merge data frames based on fips2
+    covid_counties_1_2 <- merge(counties_covid_1, county_week_T[, c("fips", "X_T")], by.x = "fips2", by.y = "fips", all.x = TRUE, suffixes = c("", "_2"))
+    names(covid_counties_1_2)[names(covid_counties_1_2) == "X_T"] <- "X_T_2"
+    
+    # Add T column
+    covid_counties_1_2$T = rep(w, nrow(covid_counties_1_2))
+    
+    # Remove rows where X_T is NA (no covid data for county pair)
+    covid_counties_1_2 = covid_counties_1_2[!is.na(covid_counties_1_2$X_T_1) & !is.na(covid_counties_1_2$X_T_2), ]
+      
+    # Initialize empty vectors to store results
+    n = length(r_upper)
+    m_1 <- numeric(n)
+    m_2 <- numeric(n)
+    s2_1 <- numeric(n)
+    s2_2 <- numeric(n)
+    C_r_T <- numeric(n)
+    significant <- numeric(n)
   
-  # Merge data frames based on fips2
-  covid_counties_1_2 <- merge(counties_covid_1, county_week_T[, c("fips", "X_T")], by.x = "fips2", by.y = "fips", all.x = TRUE, suffixes = c("", "_2"))
-  names(covid_counties_1_2)[names(covid_counties_1_2) == "X_T"] <- "X_T_2"
-  
-  # Add T column
-  covid_counties_1_2$T = rep(w, nrow(covid_counties_1_2))
-  
-  # Remove rows where X_T is NA (no covid data for county pair)
-  covid_counties_1_2 = covid_counties_1_2[!is.na(covid_counties_1_2$X_T_1) & !is.na(covid_counties_1_2$X_T_2), ]
-    
-  # Initialize empty vectors to store results
-  n = length(r_upper)
-  m_1 <- numeric(n)
-  m_2 <- numeric(n)
-  s2_1 <- numeric(n)
-  s2_2 <- numeric(n)
-  C_r_T <- numeric(n)
-  significant <- numeric(n)
-
-  # For loop to calculate means and variances for each unique r_i, a distance interval between counties
-  for (i in 1:n) {
-    X_T_1_r <- covid_counties_1_2$X_T_1[covid_counties_1_2$r_i == i]
-    X_T_2_r <- covid_counties_1_2$X_T_2[covid_counties_1_2$r_i == i]
-    
-    # Calculate means
-    m_1[i] <- mean(X_T_1_r)
-    m_2[i] <- mean(X_T_2_r)
-    
-    # Calculate variances
-    s2_1[i] <- sum((X_T_1_r - m_1[i])^2) / length(X_T_1_r)
-    s2_2[i] <- sum((X_T_2_r - m_2[i])^2) / length(X_T_2_r)
-    
-  # Correlation function
-    numerator = sum(X_T_1_r*X_T_2_r - m_1[i]*m_2[i])/length(X_T_1_r)
-    denominator = sqrt(s2_1[i]*s2_2[i])
-    C_r_T[i]= numerator/denominator # literally cor(X_T_1_r, X_T_2_r)
-    
-    # is C_r_T significant?
-    significant[i] = (cor.test(X_T_1_r, X_T_2_r)$p.value < .01)
-
+    # For loop to calculate spatial correlation for each unique r_i, a distance interval between counties
+    for (i in 1:n) {
+      X_T_1_r <- covid_counties_1_2$X_T_1[covid_counties_1_2$r_i == i]
+      X_T_2_r <- covid_counties_1_2$X_T_2[covid_counties_1_2$r_i == i]
+      
+      # we need enough observations in data to run correlation test
+      if (length(X_T_1_r) > 3  && length(X_T_2_r) > 3) {
+        C_r_T[i] = cor(X_T_1_r, X_T_2_r)
+        significant[i] = (cor.test(X_T_1_r, X_T_2_r)$p.value < 0.01)
+      } else {
+        C_r_T[i] = NA
+        significant[i] = FALSE
+      }
 }
-
-  # Calculate correlation length
   
-  mid_point_intervals = (r_upper+r_lower)/2
-  first_zero = which(significant == 0)[1]
-  xi_2 = mid_point_intervals[first_zero]
-
-  # Save to vector/list
-  cor_lengths_2[w-week_start+1] =  xi_2
-  list_Cr[[w-week_start+1]] <- C_r_T
+    # Calculate correlation length
+    mid_point_intervals = (r_upper+r_lower)/2
+    first_zero = which(significant == 0)[1]
+    xi_2 = mid_point_intervals[first_zero]
+  
+    # Save to vector/list
+    cor_lengths_W[w-week_start+1] =  xi_2
+    list_Cr_W[[w-week_start+1]] <- C_r_T
 }
 ```
+
+
+
 
 ```{r}
 # the above loop takes a really long time to iterate through all weeks
 # we only iterate over a subset of 5 weeks
 # but here is the full data 
+saveRDS(cor_lengths_W, "W_correlation_lengths.rds")
+saveRDS(list_Cr_W, "W_Cr.rds")
 
-# read in full data of spatial metrics from weeks 1-147
+# read in full data of spatial metrics from weeks 6-165
 list_Cr <- readRDS("all_Cr.rds")
-cor_lengths_2 <- readRDS("all_correlation_lengths.rds")
+cor_lengths <- readRDS("all_correlation_lengths.rds")
+
+# read in the region subsetted spatial metrics from weeks 6-165
+list_Cr_NE <- readRDS("NE_Cr.rds")
+cor_lengths_NE <- readRDS("NE_correlation_lengths.rds")
+list_Cr_MW <- readRDS("MW_Cr.rds")
+cor_lengths_MW <- readRDS("MW_correlation_lengths.rds")
+list_Cr_S <- readRDS("S_Cr.rds")
+cor_lengths_S <- readRDS("S_correlation_lengths.rds")
+list_Cr_W <- readRDS("W_Cr.rds")
+cor_lengths_W <- readRDS("W_correlation_lengths.rds")
+Cr_regions = list(list_Cr_NE,list_Cr_MW, list_Cr_S, list_Cr_W)
+cor_lengths_regions = list(cor_lengths_NE, cor_lengths_MW, cor_lengths_S, cor_lengths_W)
 ```
 
 ## Create Dataframe for the Spatial Metrics for the Subset of Weeks
@@ -547,41 +533,105 @@ col_names <- paste("r", r_lower, r_upper, sep = "_")
 dates = unique(county_week$start_date)
 dates = as.Date(dates)
 sorted_dates <- dates[order(dates)]
-date_names = as.character(sorted_dates)[6:153]
+date_names = as.character(sorted_dates)[6:165]
 
 # prepare total new cases column
 total_cases_by_week <- county_week %>%
   group_by(week) %>%
   summarize(total_cases = sum(total_cases, na.rm = TRUE))
-total_cases = total_cases_by_week[6:153,2]
-head(county_week)
+total_cases = total_cases_by_week[6:165,2]
+tail(county_week)
 ```
 
 ```{r}
+# Weekly Spatial Metrics for Entire data set
+
 # Create dataframe
 weekly_spatial_metrics <- data.frame(matrix(NA, nrow = length(list_Cr), ncol = 52))
-
-colnames(weekly_spatial_metrics)[1:4] <- c("week_start_date", "total_cases", "marginal_cases", "cor_lengths_2")
+names(weekly_spatial_metrics)
+colnames(weekly_spatial_metrics)[1:4] <- c("week_start_date", "total_cases", "marginal_cases", "cor_lengths")
 colnames(weekly_spatial_metrics)[5:52] <- as.character(col_names)
 
 # Fill in first few columns
 weekly_spatial_metrics[, "week_start_date"] <- date_names
 weekly_spatial_metrics[, "total_cases"] <- total_cases
 weekly_spatial_metrics[, "marginal_cases"] <- c(0, diff(weekly_spatial_metrics$total_cases))
-weekly_spatial_metrics[, "cor_lengths_2"] <- cor_lengths_2
+weekly_spatial_metrics[, "cor_lengths"] <- cor_lengths
 
 # Fill the data frame with list_Cr values
 for (i in seq_along(list_Cr)) {
   weekly_spatial_metrics[i, 5:52] <- unlist(list_Cr[[i]])
 }
 
+# add next week marginal cases column
 weekly_spatial_metrics <- weekly_spatial_metrics %>%
   mutate(next_week_marginal_cases = dplyr::lead(marginal_cases))
+weekly_spatial_metrics$next_week_marginal_cases[159:160] = c(NA, NA)
 
+# add wave column
+weekly_spatial_metrics$wave[as.Date(weekly_spatial_metrics$week_start_date) >= "2021-12-11"] = 3
+weekly_spatial_metrics$wave[as.Date(weekly_spatial_metrics$week_start_date) < "2021-12-11"] = 2
+weekly_spatial_metrics$wave[as.Date(weekly_spatial_metrics$week_start_date) < "2020-12-26"] = 1
+
+# add wave dummies
+weekly_spatial_metrics$wave_1[weekly_spatial_metrics$wave == 1] = 1
+weekly_spatial_metrics$wave_1[weekly_spatial_metrics$wave != 1] = 0
+weekly_spatial_metrics$wave_2[weekly_spatial_metrics$wave == 2] = 1
+weekly_spatial_metrics$wave_2[weekly_spatial_metrics$wave != 2] = 0
 
 head(weekly_spatial_metrics)
-# save to csv
-# write.csv(weekly_spatial_metrics, "weekly_spatial_metrics.csv")
+
+# save to cs
+# write.csv(weekly_spatial_metrics, "weekly_spatial_metrics_waves.csv")
+```
+
+```{r}
+# initialize data frame
+regional_weekly_spatial_metrics <- data.frame(matrix(NA, nrow = 0, ncol = 54))
+colnames(regional_weekly_spatial_metrics)[1:4] <- c("week_start_date", "total_cases", "marginal_cases", "cor_lengths")
+colnames(regional_weekly_spatial_metrics)[5:52] <- as.character(col_names)
+colnames(regional_weekly_spatial_metrics)[53:54] <- c("next_week_marginal_cases","region")
+
+# Weekly Spatial Metrics for Regions
+for (r in 1:4) {
+  list_Cr = Cr_regions[[r]]
+  cor_lengths = cor_lengths_regions[[r]]
+  regions = c("Northeast","Midwest","South","West")
+  
+  # Create dataframe
+  weekly_spatial_metrics <- data.frame(matrix(NA, nrow = length(list_Cr), ncol = 52))
+  colnames(weekly_spatial_metrics)[1:4] <- c("week_start_date", "total_cases", "marginal_cases", "cor_lengths")
+  colnames(weekly_spatial_metrics)[5:52] <- as.character(col_names)
+  
+  # Fill in first few columns
+  weekly_spatial_metrics[, "week_start_date"] <- date_names
+  weekly_spatial_metrics[, "total_cases"] <- total_cases
+  weekly_spatial_metrics[, "marginal_cases"] <- c(0, diff(weekly_spatial_metrics$total_cases))
+  weekly_spatial_metrics[, "cor_lengths"] <- cor_lengths
+  
+  # Fill the data frame with list_Cr values
+  for (i in seq_along(list_Cr)) {
+    weekly_spatial_metrics[i, 5:52] <- unlist(list_Cr[[i]])
+  }
+  
+  # add next week marginal cases column
+  weekly_spatial_metrics <- weekly_spatial_metrics %>%
+    mutate(next_week_marginal_cases = dplyr::lead(marginal_cases))
+  weekly_spatial_metrics$next_week_marginal_cases[159:160] = c(NA, NA)
+  weekly_spatial_metrics$region = rep(regions[r], 160)
+  regional_weekly_spatial_metrics = rbind(regional_weekly_spatial_metrics, weekly_spatial_metrics)
+}
+
+# add wave dummies
+regional_weekly_spatial_metrics$northeast[regional_weekly_spatial_metrics$region == "Northeast"] = 1
+regional_weekly_spatial_metrics$northeast[weekly_spatial_metrics$region != "Northeast"] = 0
+regional_weekly_spatial_metrics$midwest[regional_weekly_spatial_metrics$region == "Midwest"] = 1
+regional_weekly_spatial_metrics$midwest[regional_weekly_spatial_metrics$region != "Midwest"] = 0
+regional_weekly_spatial_metrics$south[regional_weekly_spatial_metrics$region == "South"] = 1
+regional_weekly_spatial_metrics$south[regional_weekly_spatial_metrics$region != "South"] = 0
+
+# save to cs
+# write.csv(regional_weekly_spatial_metrics, "regional_weekly_spatial_metrics.csv")
 ```
 
 Output: weekly_spatial_metrics
@@ -589,15 +639,50 @@ Output: weekly_spatial_metrics
   - 148 rows (# weeks in subset) x 52 columns (date, cases, distance intervals)
   - features: start date of week, total cases, marginal cases, next week's marginal cases, distance intervals from [0,50] to [970,1000], correlation length 
 
+
+
+```{r}
+# turn this into a panel data set
+
+# Gather the columns into key-value pairs
+df_long <- gather(weekly_spatial_metrics, key = "r", value = "value", -week_start_date, -total_cases, -marginal_cases, -cor_lengths_2, -next_week_marginal_cases)
+
+# If you want to extract the numerical range from the column names
+df_long$r <- sub("r_", "", df_long$r)
+df_long$r <- as.numeric(sub("_.*", "", df_long$r))
+
+# If you want to order the data by week_start_date and r
+df_long <- df_long[order(df_long$week_start_date, df_long$r), ]
+
+# Reset row names if needed
+rownames(df_long) <- NULL
+
+# Print the resulting panel data set
+tail(df_long)
+nrow(df_long)/nrow(weekly_spatial_metrics)
+
+
+# add week column
+temp <- df_long %>%
+  arrange(week_start_date)
+date_vector <- unique(temp$week_start_date)
+week_vector <- c(6:165)
+for (i in seq_along(date_vector)) {
+  df_long$week[df_long$week_start_date == date_vector[i]] <- week_vector[i]
+}
+# save to csv
+# write.csv(df_long, "panel_week_r_spatial_metrics.csv")
+```
+
 # Some Spatial Metrics EDA
 
 ## Spatial Correlation C(r) Plots for all weeks
 
 ```{r}
 # Split list into 10 subsets
-week_subset = list_Cr[5:148]
+week_subset = list_Cr[6:155]
 
-list_of_subsets <- split(week_subset, rep(1:12, each = 12))
+list_of_subsets <- split(week_subset, rep(1:15, each = 10))
 
 # Create a list to store matrix_Cr for each subset
 list_of_matrix_Cr <- list()
@@ -620,7 +705,7 @@ par(mfrow = c(2, 3))
 for (i in seq_along(list_of_matrix_Cr)) {
   # Plot using matplot
   matplot(r_lower, list_of_matrix_Cr[[i]], type = "l", col = 1:15, lty = 1:15,
-          xlab = "r (km)", ylab = "C(r)", main = paste("Weeks", (i - 1) * 12 + 9, "-", i * 12), col.axis = "blue")
+          xlab = "r (km)", ylab = "C(r)", main = paste("Weeks", (i - 1) * 10+11, "-", i * 10+10), col.axis = "blue")
 }
 ```
 
@@ -666,6 +751,56 @@ robust_se <- sqrt(diag(vcovHC(lm_model, type = "HC1")))
 
 # Perform hypothesis tests with robust standard errors
 robust_test <- coeftest(lm_model, vcov = vcovHC(lm_model, type = "HC1")) # still significant
+```
+
+```{r}
+# TRUE DATA
+N = length(log(weekly_spatial_metrics$cor_lengths_2))-1
+p = 1
+X = cbind(rep(1,N), log(weekly_spatial_metrics$cor_lengths_2)[1:N])
+Y = log(weekly_spatial_metrics$next_week_marginal_cases)[1:N]
+# Remove rows with NAs
+complete_rows <- complete.cases(X, Y)
+X <- X[complete_rows, ]
+Y <- Y[complete_rows]
+indices_complete_cases <- which(complete_rows)
+
+# Initial data points for first beta
+n=5
+
+# Initialize beta using the first n observations
+X_n <- X[1:n, , drop = FALSE]
+Y_n <- Y[1:n]
+beta_n <- solve(t(X_n) %*% X_n) %*% t(X_n) %*% Y_n
+betas = data.frame(beta_n[1], beta_n[2])
+# Sequentially update using the algorithm
+for (i in (n + 1):length(Y)) {
+  # Add an additional observation
+  X_n <- rbind(X_n, c(1,X[i,2]))
+  Y_n <- c(Y_n, Y[i])
+  beta_n <- solve(t(X_n) %*% X_n) %*% t(X_n) %*% Y_n
+  betas= rbind(betas, c(beta_n[1,], beta_n[2,]))
+}
+
+# Print the final estimated coefficients
+cat("Final Estimated Coefficients:", beta_n, "\n")
+nrow(beta_df)
+# Create beta data frame
+names(betas) = c("intercept","slope")
+beta_df <- data.frame(intercept = rep(NA,N), slope = rep(NA, N))
+beta_df[indices_complete_cases[5:length(indices_complete_cases)],] <- round(betas,3)
+beta_df[5:(nrow(beta_df)-1),] <- fill(beta_df[5:(nrow(beta_df)-1),], .direction = "down")
+na_rows <- data.frame(intercept = rep(NA, 5),slope = rep(NA, 5))
+full_betas <- rbind(na_rows, beta_df,beta_df[(nrow(beta_df)-1),])
+# fill in missing values
+full_betas[61:63,]=full_betas[60,]
+full_betas[91:93,]=full_betas[90,]
+full_betas[121,]=full_betas[120,]
+full_betas[130,]=full_betas[129,]
+full_betas$week = c(1:165)
+full_betas = full_betas[1:163,]
+#write to csv
+# write.csv(full_betas, "log_log_model_coefs.csv")
 ```
 
 ### Aarushi's Section (more data cleaning + Poverty_Covid EDA)
