@@ -1,0 +1,52 @@
+---
+title: "Spatial Dynamics - Modeling"
+subtitle: "Aarushi Somani, Eleanor Kim, Lauren Murai, Meichen Chen"
+output:
+  pdf_document: default
+  html_document: default
+date: '2024-03-11'
+---
+
+```{r}
+#load packages
+library(sandwich)
+library(lmtest)
+```
+
+```{r}
+# Weekly Spatial Metrics with Time Wave Columns
+weekly_spatial_metrics_waves = read.csv("weekly_spatial_metrics_waves.csv")
+names(weekly_spatial_metrics_waves)
+```
+Output: weekly_spatial_metrics_waves
+  - Weekly data set with corresponding covid cases, spatial correlations, and correlation lengths
+  - 160 rows (weeks 6 - 165) x 57 columns (date, cases, cor length, C(r), wave dummies)
+  - features: start date of week, total cases, marginal cases, next week's marginal cases, C(r) for distance intervals from [0,50] to [970,1000], correlation length, wave, wave 1 dummy, wave 2 dummy
+
+
+```{r}
+# Weekly Spatial Metrics with Region Columns
+regional_weekly_spatial_metrics = read.csv("regional_weekly_spatial_metrics.csv")
+head(regional_weekly_spatial_metrics)
+```
+
+Output: regional_weekly_spatial_metrics
+  - Weekly data set with corresponding covid cases, spatial correlations, and correlation lengths
+  - 640 rows (weeks 6 - 165 x 4 regions) x 59 columns (date, cases, cor length, C(r), region dummies)
+  - features: start date of week, total cases, marginal cases, next week's marginal cases, C(r) for distance intervals from [0,50] to [970,1000], correlation length, region, northeast dummy, midwest dummy, south dummy
+
+# Model on entire data
+
+```{r}
+# Regress next week's marginal cases on correlation length
+simple_model <- lm(log(weekly_spatial_metrics_waves$next_week_marginal_cases) ~ log(weekly_spatial_metrics_waves$cor_lengths), data = weekly_spatial_metrics_waves)
+
+# Perform hypothesis tests with robust standard errors for heteroskedasticity
+robust_se <- sqrt(diag(vcovHC(simple_model, type = "HC1")))
+
+robust_test <- coeftest(simple_model, vcov = vcovHC(simple_model, type = "HC1"))
+print(robust_test)
+
+# Print Result
+paste("a 10% increase in correlation length corresponds to a ", round(simple_model$coefficients[2]*10,2),"% change in cases in the following week")
+```
