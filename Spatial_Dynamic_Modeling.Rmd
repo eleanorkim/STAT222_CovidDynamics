@@ -35,6 +35,15 @@ Output: regional_weekly_spatial_metrics
   - 640 rows (weeks 6 - 165 x 4 regions) x 59 columns (date, cases, cor length, C(r), region dummies)
   - features: start date of week, total cases, marginal cases, next week's marginal cases, C(r) for distance intervals from [0,50] to [970,1000], correlation length, region, northeast dummy, midwest dummy, south dummy
 
+
+
+```{r}
+# Weekly Spatial Metrics with Poverty Columns
+poverty_weekly_spatial_metrics = read.csv("poverty_weekly_spatial_metrics.csv")
+head(poverty_weekly_spatial_metrics)
+```
+
+
 # Model on entire data
 
 ```{r}
@@ -50,3 +59,4 @@ print(robust_test)
 # Print Result
 paste("a 10% increase in correlation length corresponds to a ", round(simple_model$coefficients[2]*10,2),"% change in cases in the following week")
 ```
+
