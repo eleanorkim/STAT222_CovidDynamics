@@ -17,6 +17,7 @@ library(sandwich)
 library(lmtest)
 library(tidyr)
 library(ggplot2)
+library(openxlsx)
 ```
 
 # Data Cleaning
@@ -812,7 +813,7 @@ weekly_summary <- covid_daily_avg %>%
   group_by(week) %>%
   summarize(
     total_cases = sum(total_cases),
-    total_deaths = sum(total_deaths),
+    total_deaths = sum(total_deaths, na.rm = TRUE),
     avg_daily_cases = sum(avg_daily_cases),
     avg_daily_deaths = sum(avg_daily_deaths)
   )
@@ -820,14 +821,20 @@ weekly_summary <- covid_daily_avg %>%
 # View the summarized data
 print(weekly_summary)
 
-# Plotting total cases and total deaths for each week
+# Plotting total cases for each week
 ggplot(weekly_summary, aes(x = week)) +
   geom_line(aes(y = total_cases, color = "Total Cases")) +
   #geom_line(aes(y = total_deaths, color = "Total Deaths")) +
-  labs(y = "Count", title = "Weekly Total Cases and Deaths") +
+  labs(y = "Count", title = "Total Cases per Week ") +
   scale_color_manual(values = c("Total Cases" = "blue", "Total Deaths" = "red")) +
   theme_minimal()
 
+# Plotting total deaths for each week
+ggplot(weekly_summary, aes(x = week)) +
+  geom_line(aes(y = total_deaths, color = "Total Deaths")) +
+  labs(y = "Count", title = "Total Deaths per Week") +
+  scale_color_manual(values = c("Total Deaths" = "red")) +
+  theme_minimal()
 ```
 
 ```{r}
@@ -844,14 +851,22 @@ weekly_summary1 <- weekly_summary %>%
 # View the updated dataframe with new columns
 print(weekly_summary1)
 
-# Plotting total cases and total deaths for each week
+# Plotting new cases for each week
 ggplot(weekly_summary1, aes(x = week)) +
-  geom_line(aes(y = new_cases, color = "Total Cases")) +
-  #geom_line(aes(y = total_deaths, color = "Total Deaths")) +
+  geom_line(aes(y = new_cases, color = "New Cases")) +
   geom_vline(xintercept = 47, color = "red", linetype = "dotted") +  # Red dotted line at week 47
   geom_vline(xintercept = 97, color = "red", linetype = "dotted") +  # Red dotted line at week 97
-  labs(y = "Count", title = "Weekly New Total Cases") +
-  scale_color_manual(values = c("Total Cases" = "blue", "Total Deaths" = "red")) +
+  labs(y = "Count", title = "Weekly New Cases") +
+  scale_color_manual(values = c("New Cases" = "blue")) +
+  theme_minimal()
+
+# Plotting new deaths for each week
+ggplot(weekly_summary1, aes(x = week)) +
+  geom_line(aes(y = new_deaths, color = "New Deaths")) +
+  geom_vline(xintercept = 47, color = "red", linetype = "dotted") +  # Red dotted line at week 47
+  geom_vline(xintercept = 97, color = "red", linetype = "dotted") +  # Red dotted line at week 97
+  labs(y = "Count", title = "Weekly New Deaths") +
+  scale_color_manual(values = c("New Deaths" = "red")) +
   theme_minimal()
 
 ```
@@ -867,20 +882,27 @@ weekly_summary_perpop <- county_week %>%
     avg_daily_cases = sum(avg_daily_cases),
     avg_daily_deaths = sum(avg_daily_deaths), 
     avg_daily_cases_perpop = sum(fract_avg_daily_cases), 
-    avg_daily_deaths_perpop = sum(fract_avg_daily_deaths)
+    avg_daily_deaths_perpop = sum(fract_avg_daily_deaths, na.rm = TRUE)
   )
 
 # View the summarized data
 print(weekly_summary_perpop)
 
-# Plotting total cases and total deaths for each week
+# Plotting total cases for each week
 ggplot(weekly_summary_perpop, aes(x = week)) +
   geom_line(aes(y = avg_daily_cases_perpop, color = "Total Cases")) +
-  #geom_line(aes(y = total_deaths, color = "Total Deaths")) +
-  labs(y = "Count", title = "Weekly Total Cases and Deaths") +
-  scale_color_manual(values = c("Total Cases" = "blue", "Total Deaths" = "red")) +
+  labs(y = "Count", title = "Total Cases per capita per Week") +
+  scale_color_manual(values = c("Total Cases" = "blue")) +
   theme_minimal()
 
+library(ggplot2)
+
+# Plotting total deaths for each week
+ggplot(weekly_summary_perpop, aes(x = week)) +
+  geom_line(aes(y = avg_daily_deaths_perpop, color = "Total Deaths")) +
+  labs(y = "Count", title = "Total Deaths per capita per Week") +
+  scale_color_manual(values = c("Total Deaths" = "red")) +
+  theme_minimal()
 ```
 
 ```{r}
@@ -895,14 +917,22 @@ weekly_summary_perpop1 <- weekly_summary_perpop %>%
 # View the updated dataframe with new columns
 print(weekly_summary_perpop1)
 
-# Plotting total cases and total deaths for each week
+# Plotting new cases for each week
 ggplot(weekly_summary_perpop1, aes(x = week)) +
-  geom_line(aes(y = new_avg_daily_cases_perpop, color = "Total Cases")) +
-  #geom_line(aes(y = total_deaths, color = "Total Deaths")) +
+  geom_line(aes(y = new_avg_daily_cases_perpop, color = "New Cases")) +
   geom_vline(xintercept = 47, color = "red", linetype = "dotted") +  # Red dotted line at week 47
   geom_vline(xintercept = 97, color = "red", linetype = "dotted") +  # Red dotted line at week 97
-  labs(y = "Count", title = "Weekly Total New Cases per Capital") +
-  scale_color_manual(values = c("Total Cases" = "blue", "Total Deaths" = "red")) +
+  labs(y = "Count", title = "Weekly New Cases per Capita") +
+  scale_color_manual(values = c("New Cases" = "blue")) +
+  theme_minimal()
+
+# Plotting new deaths for each week
+ggplot(weekly_summary_perpop1, aes(x = week)) +
+  geom_line(aes(y = new_avg_daily_deaths_perpop, color = "New Deaths")) +
+  geom_vline(xintercept = 47, color = "red", linetype = "dotted") +  # Red dotted line at week 47
+  geom_vline(xintercept = 97, color = "red", linetype = "dotted") +  # Red dotted line at week 97
+  labs(y = "Count", title = "Weekly New Deaths per Capita") +
+  scale_color_manual(values = c("New Deaths" = "red")) +
   theme_minimal()
 ```
 
@@ -929,12 +959,10 @@ nrow(poverty)
 ### Poverty EDA
 
 ```{r}
-# Assuming 'poverty' is your original dataframe
-
 # Create a copy of the poverty dataframe
 pov <- poverty
 
-# Convert necessary columns to numeric if not already (assuming pov already has these columns as numeric based on your setup)
+# Convert necessary columns to numeric if not already 
 pov$PCTPOVALL_2021 <- as.numeric(as.character(pov$PCTPOVALL_2021))
 pov$MEDHHINC_2021 <- as.numeric(as.character(pov$MEDHHINC_2021))
 
@@ -961,9 +989,6 @@ head(pov)
 ```
 
 ```{r}
-
-# Assuming pov is your dataframe with the Tier_Poverty column and potentially NA values
-
 # Create summary table with NA values ignored
 tier_summary <- pov %>%
   filter(!is.na(Tier_Poverty)) %>% # Ignore rows where Tier_Poverty is NA
@@ -978,10 +1003,22 @@ tier_summary <- pov %>%
 
 # Print the summary table
 print(tier_summary)
+
+# save poverty tiers data to excel
+wb <- createWorkbook()
+
+# Add two sheets to the workbook
+addWorksheet(wb, "PovertyTiers")
+addWorksheet(wb, "PovertyTiersSummary")
+
+# Write data frames to separate sheets
+writeData(wb, sheet = "PovertyTiers", pov)
+writeData(wb, sheet = "PovertyTiersSummary", tier_summary)
+
+saveWorkbook(wb, "Poverty_Tiers.xlsx", overwrite = TRUE)
 ```
 
 ```{r}
-
 county_week <- county_week %>%
   mutate(
     year = case_when(
@@ -1062,7 +1099,6 @@ print(sapply(covid_yearly_final, function(x) sum(is.na(x))))
 # Poverty Rate Analysis for All Years
 
 ```{r}
-# Assuming covid_fract_daily_avg_pov_filtered1 is already prepared
 covid_fract_daily_avg_pov_filtered1 <- covid_yearly_final %>%
   filter(!is.na(avg_pov_rate))
 
@@ -1091,8 +1127,6 @@ print(paste("Slope of the regression line:", slope))
 # Median Household Income Analysis for All Years
 
 ```{r}
-
-# Assuming covid_fract_daily_avg_pov_filtered2 is prepared
 covid_fract_daily_avg_pov_filtered2 <- covid_yearly_final %>%
   filter(!is.na(Median_Household_Income_2021))
 
@@ -1143,6 +1177,85 @@ unemployment$avg_unemploy_rate <- rowMeans(unemployment[, 2:4], na.rm = TRUE)
 head(unemployment)
 ```
 ### Unemployment EDA
+
+```{r}
+# Create a copy of the unemployment dataframe 
+unemploy <- unemployment 
+
+# Convert necessary columns to numeric if not already 
+# unemploy$avg_unemploy_rate <- as.numeric(as.character(unemploy$avg_unemploy_rate))
+# unemploy$Median_Household_Income_2021 <- as.numeric(as.character(unemploy$Median_Household_Income_2021))
+
+# Summary statistics for unemployment rate and median household income 
+summary_unemploy_rate <- summary(unemploy$avg_unemploy_rate)
+summary_medhhinc <- summary(unemploy$Median_Household_Income_2021)
+
+# Print summary statistics
+print(summary_unemploy_rate)
+print(summary_medhhinc)
+
+# Function to categorize into tiers based on PCTPOVALL_2021
+# get_tier_povall <- function(x) {
+#  quantiles <- quantile(x, probs = c(1/3, 2/3), na.rm = TRUE)
+#  tier <- ifelse(x <= quantiles[1], 1, ifelse(x <= quantiles[2], 2, 3))
+#  return(tier)
+#}
+
+# Apply the tier function to unemployment rate and median household income 
+unemploy$Tier_Unemploy <- get_tier_povall(unemploy$avg_unemploy_rate)
+unemploy$Tier_MedHHInc <- get_tier_povall(unemploy$Median_Household_Income_2021)
+# View the first few rows to check the new column
+head(unemploy)
+
+# hist(unemploy$avg_unemploy_rate)
+```
+
+```{r}
+# Create summary table with NA values ignored
+tier_summary_unemploy <- unemploy %>%
+  filter(!is.na(Tier_Unemploy)) %>% # Ignore rows where Tier_Poverty is NA
+  group_by(Tier_Unemploy) %>%
+  summarise(
+    Count = n(), # Sum of counties in that tier
+    Mean_Unemployment_Rate = mean(avg_unemploy_rate, na.rm = TRUE), # Mean poverty rate, ignoring NA
+    Median_Unemployment_Rate = median(avg_unemploy_rate, na.rm = TRUE), # Median poverty rate, ignoring NA
+    Min_Unemployment_Rate = min(avg_unemploy_rate, na.rm = TRUE), # Minimum poverty rate, ignoring NA
+    Max_Unemployment_Rate = max(avg_unemploy_rate, na.rm = TRUE) # Maximum poverty rate, ignoring NA
+  )
+
+# Print the summary table
+print(tier_summary_unemploy)
+
+# save poverty tiers data to excel
+wb <- createWorkbook()
+
+# Add two sheets to the workbook
+addWorksheet(wb, "UnemployTier")
+addWorksheet(wb, "UnemployTierSumm")
+
+# Write data frames to separate sheets
+writeData(wb, sheet = "UnemployTier", unemploy)
+writeData(wb, sheet = "UnemployTierSumm", tier_summary_unemploy)
+
+saveWorkbook(wb, "Unemply_Tiers.xlsx", overwrite = TRUE)
+```
+
+```{r}
+# Create summary table with NA values ignored
+tier_summary_MedHHInc <- unemploy %>%
+  filter(!is.na(Tier_MedHHInc)) %>% # Ignore rows where Tier_Poverty is NA
+  group_by(Tier_MedHHInc) %>%
+  summarise(
+    Count = n(), # Sum of counties in that tier
+    Mean_MedHHInc = mean(Median_Household_Income_2021, na.rm = TRUE), 
+    Median_MedHHInc = median(Median_Household_Income_2021, na.rm = TRUE), 
+    Min_MedHHInc = min(Median_Household_Income_2021, na.rm = TRUE), 
+    Max_MedHHInc = max(Median_Household_Income_2021, na.rm = TRUE)
+  )
+
+# Print the summary table
+print(tier_summary_MedHHInc)
+```
 
 ```{r}
 # Join with unemployment data 
@@ -1217,11 +1330,10 @@ slope <- coef(model)["Med_HH_Income_Percent_of_State_Total_2021"]
 print(paste("Slope of the regression line:", slope))
 ```
 
-### Education EDA
-
-### Clean Education Data (from USDA) 2021
+### Clean Education Data (from USDA) 2017-2021
 
 ```{r}
+education_raw <- read_xlsx("Education.xlsx")
 education <- education_raw[-(1:2), ]
 
 # Set the column names of to be the values of the first row
@@ -1231,24 +1343,90 @@ education <- education[-1, ]
 education <- education[-1, ]
 education <- education[, c("Federal Information Processing Standard (FIPS) Code", "Percent of adults with less than a high school diploma, 2017-21","Percent of adults with a high school diploma only, 2017-21", "Percent of adults with a bachelor's degree or higher, 2017-21")]
 #education
+colnames(education) <- c("fips", "no_degree_rate", "high_school_diploma_rate", "bachelors_or_higher_rate")
+
+class(education$no_degree_rate) <- "numeric"
+class(education$high_school_diploma_rate) <- "numeric"
+class(education$bachelors_or_higher_rate) <- "numeric"
 
 head(education)
 #nrow(education)
 ```
 
+### Education EDA
+
 ```{r}
-# join with education
-covid_yearly_final_ed <- covid_yearly_final %>%
-  left_join(education %>% select(FIPS_code = `Federal Information Processing Standard (FIPS) Code`, No_Degree_p = `Percent of adults with less than a high school diploma, 2017-21`, High_School_Diploma_Only_p = `Percent of adults with a high school diploma only, 2017-21`, Bachelors_Or_Higher_p = `Percent of adults with a bachelor's degree or higher, 2017-21`), by = c("fips" = "FIPS_code")) %>%
-  mutate(
-    no_degree_rate = No_Degree_p,
-    high_school_diploma_rate = High_School_Diploma_Only_p,
-    bachelors_or_higher_rate = Bachelors_Or_Higher_p
-  ) %>%
-  select(year, fips, annual_cases_per_capita, no_degree_rate, high_school_diploma_rate, bachelors_or_higher_rate)
+# Create a copy of the education dataframe
+ed <- education
+
+# Summary statistics for no_degree_rate and bachelors_or_higher_rate
+summary_ed_nodegree <- summary(ed$no_degree_rate)
+summary_ed_bachelors <- summary(ed$bachelors_or_higher_rate)
+
+# Print summary statistics
+print(summary_ed_nodegree)
+print(summary_ed_bachelors)
+
+# Apply the tier function 
+ed$tier_bachelors <- get_tier_povall(ed$bachelors_or_higher_rate)
+
+# View the first few rows to check the new column
+head(ed)
+```
+
+```{r}
+# Create summary table with NA values ignored
+tier_summary_bachelors <- ed %>%
+  filter(!is.na(tier_bachelors)) %>% 
+  group_by(tier_bachelors) %>%
+  summarise(
+    Count = n(), # Sum of counties in that tier
+    Mean_Bachelors_Rate = mean(bachelors_or_higher_rate, na.rm = TRUE), 
+    Median_Bachelors_Rate = median(bachelors_or_higher_rate, na.rm = TRUE), 
+    Min_Unemployment_Rate = min(bachelors_or_higher_rate, na.rm = TRUE), 
+    Max_Unemployment_Rate = max(bachelors_or_higher_rate, na.rm = TRUE) 
+  )
+
+# Print the summary table
+print(tier_summary_bachelors)
+
+# save poverty tiers data to excel
+wb <- createWorkbook()
+
+# Add two sheets to the workbook
+addWorksheet(wb, "BachelorsTier")
+addWorksheet(wb, "BachelorsTierSumm")
+
+# Write data frames to separate sheets
+writeData(wb, sheet = "BachelorsTier", ed)
+writeData(wb, sheet = "BachelorsTierSumm", tier_summary_bachelors)
+
+saveWorkbook(wb, "Education_Tiers.xlsx", overwrite = TRUE)
+```
+
+# Identifying counties with missing data
+
+```{r}
+# counties with no education date
+fips_no_ed_data <- covid_yearly_final_ed %>%
+  filter(is.na(bachelors_or_higher_rate) | is.na(no_degree_rate)) %>%
+  pull(fips) %>%
+  unique()
+print(fips_no_ed_data)
+
+print(sapply(covid_yearly_final_ed, function(x) sum(is.na(x))))
+```
+
+```{r}
+# join with education with rest of covid socioeconomic data
+covid_yearly_final_ed <- covid_fract_daily_avg_income_percent_filtered %>%
+  left_join(education %>% select(FIPS_code = `fips`, no_degree_rate = `no_degree_rate`,  bachelors_or_higher_rate = `bachelors_or_higher_rate`), by = c("fips" = "FIPS_code")) 
 
 # View the resulting dataset
-head(covid_yearly_final_ed)
+covid_yearly_final_ed
+
+# save all socioeconomic factors data into an excel sheet
+write.xlsx(covid_yearly_final_ed, "Processed_Socioeconomic.xlsx", rowNames = FALSE)
 ```
 
 # Less than a HS Diploma Rate from 2017-21
@@ -1257,6 +1435,7 @@ head(covid_yearly_final_ed)
 # Visualize the relationship between no_degree_rate and annual_cases_per_capita
 ggplot(covid_yearly_final_ed, aes(x = no_degree_rate, y = annual_cases_per_capita, color = year)) +
   geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "black") +
   theme_minimal() +
   labs(title = "Annual Cases per Capita by Less than a HS Diploma Rate for each County",
        x = "Less than a High School Diploma Rate (%)",
@@ -1264,6 +1443,13 @@ ggplot(covid_yearly_final_ed, aes(x = no_degree_rate, y = annual_cases_per_capit
        caption = "Data source: [Johns Hopkins, USDA]",
        color = "Year") +
   theme(plot.title = element_text(hjust = 0.5))
+
+# Fit a linear model for all data to calculate the slope
+model <- lm(annual_cases_per_capita ~ no_degree_rate, data = covid_yearly_final_ed)
+
+# Print the slope of the regression line
+slope <- coef(model)["no_degree_rate"]
+print(paste("Slope of the regression line:", slope))
 ```
 
 # Bachelors Degree or Higher from 2017-21
@@ -1272,6 +1458,7 @@ ggplot(covid_yearly_final_ed, aes(x = no_degree_rate, y = annual_cases_per_capit
 # Visualize the relationship between bachelors_or_higher_rate and annual_cases_per_capita
 ggplot(covid_yearly_final_ed, aes(x = bachelors_or_higher_rate, y = annual_cases_per_capita, color = year)) +
   geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "black") +
   theme_minimal() +
   labs(title = "Annual Cases per Capita by Bachelors Degree or Higher Rates for each County",
        x = "Bachelors Degree or Higher Rates (%)",
@@ -1279,9 +1466,16 @@ ggplot(covid_yearly_final_ed, aes(x = bachelors_or_higher_rate, y = annual_cases
        caption = "Data source: [Johns Hopkins, USDA]",
        color = "Year") +
   theme(plot.title = element_text(hjust = 0.5))
+
+# Fit a linear model for all data to calculate the slope
+model <- lm(annual_cases_per_capita ~ bachelors_or_higher_rate, data = covid_yearly_final_ed)
+
+# Print the slope of the regression line
+slope <- coef(model)["bachelors_or_higher_rate"]
+print(paste("Slope of the regression line:", slope))
 ```
 
-### Is there a differece between those who had a Bacehlor's Degree in 2021 vs those who had less than a HS diploma?
+# Is there a differece between those who had a Bacehlor's Degree in 2021 vs those who had less than a HS diploma?
 
 ```{r}
 education_cases_2021 <- covid_yearly_final_ed %>%
