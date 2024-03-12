@@ -89,6 +89,11 @@ Output: county_df
   - County level data set
   - 2155 rows (counties) x 8 columns (county features)
   - features: fips, state, county name, land area (sq km), latitude of centroid, longitude of centroid, population, region
+```{r}
+# add poverty tiers to county_dr
+poverty = read_xlsx("Poverty_Tiers.xlsx")
+county_df <- merge(county_df, poverty, by.x = "fips", by.y = "FIPS_Code", all.x = TRUE)
+```
 
 ## Calculate pairwise distances between counties
 
@@ -265,8 +270,6 @@ population[, 2:4] <- lapply(population[, 2:4], as.numeric)
 
 # add average population 2020 - 2022 as we define socioeconomic factors as fixed 
 population$avg_pop <- rowMeans(population[, 2:4], na.rm = TRUE)
-
-head(population)
 ```
 
 ```{r}
@@ -325,6 +328,10 @@ Output: county_week
   - 357104 rows (county-week) x 12 columns (time columns, covid cases)
   - features: fips, county, week, total_cases, total_deaths, fract_avg_daily_cases (this is Z_T(i) in the paper), start_date, avg_pop, month_year, X_T ("the extent to which the relative number of cases increased or decreased on a given week T compared to the previous week T-1")
 
+```{r}
+# add poverty tiers to county_week
+county_week<- merge(county_week, poverty, by.x = "fips", by.y = "FIPS_Code", all.x = TRUE)
+```
 
 ## Merge X_T's onto pairwise county data for fixed T for each pair county1-county2
 
@@ -426,7 +433,11 @@ legend("topright", legend = c("C(r)",expression(paste(argmin[r]~C(r) == 0))), co
 
 ```
 
-## Calculate Spatial Correlations and Correlation Lengths for a subset of weeks
+
+## Calculate Spatial Correlations and Correlation Lengths for a subset of weeks - Takes a Long Time
+
+
+### Region Subsets
 
 ```{r}
 # R always terminates when I do a for loop so i just run this chunk 4 times for each region
@@ -489,23 +500,96 @@ for (w in week_start:week_end) {
     # Calculate correlation length
     mid_point_intervals = (r_upper+r_lower)/2
     first_zero = which(significant == 0)[1]
-    xi_2 = mid_point_intervals[first_zero]
+    xi = mid_point_intervals[first_zero]
   
     # Save to vector/list
-    cor_lengths_W[w-week_start+1] =  xi_2
+    cor_lengths_W[w-week_start+1] =  xi
     list_Cr_W[[w-week_start+1]] <- C_r_T
 }
 ```
 
 
+### Poverty Subsets
 
 
 ```{r}
+# R always terminates when I do a for loop so i just run this chunk 4 times for each region
+select_tier = 3
+subset_pairwise_counties = filter(pairwise_counties, Tier_Poverty_1 == select_tier & Tier_Poverty_2 ==select_tier)
+subset_county_week = filter(county_week, Tier_Poverty == select_tier)
+
+#Initialize vectors
+list_Cr_3 = c()
+cor_lengths_3 = c()
+
+# up until week 5 we have < 22 observations
+week_start = 6
+week_end = 165
+    
+# Iterate over each week
+for (w in week_start:week_end) {
+    # Subset covid data by fixing week T
+    county_week_T = filter(subset_county_week, week == w)
+  
+    # Merge data frames based on fips1
+    counties_covid_1 <- merge(subset_pairwise_counties, county_week_T[, c("fips", "X_T")], by.x = "fips1", by.y = "fips", all.x = TRUE, suffixes = c("", "_1"))
+    names(counties_covid_1)[names(counties_covid_1) == "X_T"] <- "X_T_1"
+    
+    # Merge data frames based on fips2
+    covid_counties_1_2 <- merge(counties_covid_1, county_week_T[, c("fips", "X_T")], by.x = "fips2", by.y = "fips", all.x = TRUE, suffixes = c("", "_2"))
+    names(covid_counties_1_2)[names(covid_counties_1_2) == "X_T"] <- "X_T_2"
+    
+    # Add T column
+    covid_counties_1_2$T = rep(w, nrow(covid_counties_1_2))
+    
+    # Remove rows where X_T is NA (no covid data for county pair)
+    covid_counties_1_2 = covid_counties_1_2[!is.na(covid_counties_1_2$X_T_1) & !is.na(covid_counties_1_2$X_T_2), ]
+      
+    # Initialize empty vectors to store results
+    n = length(r_upper)
+    m_1 <- numeric(n)
+    m_2 <- numeric(n)
+    s2_1 <- numeric(n)
+    s2_2 <- numeric(n)
+    C_r_T <- numeric(n)
+    significant <- numeric(n)
+  
+    # For loop to calculate spatial correlation for each unique r_i, a distance interval between counties
+    for (i in 1:n) {
+      X_T_1_r <- covid_counties_1_2$X_T_1[covid_counties_1_2$r_i == i]
+      X_T_2_r <- covid_counties_1_2$X_T_2[covid_counties_1_2$r_i == i]
+      
+      # we need enough observations in data to run correlation test
+      if (length(X_T_1_r) > 3  && length(X_T_2_r) > 3) {
+        C_r_T[i] = cor(X_T_1_r, X_T_2_r)
+        significant[i] = (cor.test(X_T_1_r, X_T_2_r)$p.value < 0.01)
+      } else {
+        C_r_T[i] = NA
+        significant[i] = FALSE
+      }
+}
+  
+    # Calculate correlation length
+    mid_point_intervals = (r_upper+r_lower)/2
+    first_zero = which(significant == 0)[1]
+    xi = mid_point_intervals[first_zero]
+  
+    # Save to vector/list
+    cor_lengths_3[w-week_start+1] =  xi
+    list_Cr_3[[w-week_start+1]] <- C_r_T
+}
+```
+
+
+
+## Read in Spatial Metrics Data
+
+```{r}
 # the above loop takes a really long time to iterate through all weeks
-# we only iterate over a subset of 5 weeks
+
 # but here is the full data 
-saveRDS(cor_lengths_W, "W_correlation_lengths.rds")
-saveRDS(list_Cr_W, "W_Cr.rds")
+saveRDS(cor_lengths_3, "tier3_correlation_lengths.rds")
+saveRDS(list_Cr_3, "tier3_Cr.rds")
 
 # read in full data of spatial metrics from weeks 6-165
 list_Cr <- readRDS("all_Cr.rds")
@@ -520,8 +604,20 @@ list_Cr_S <- readRDS("S_Cr.rds")
 cor_lengths_S <- readRDS("S_correlation_lengths.rds")
 list_Cr_W <- readRDS("W_Cr.rds")
 cor_lengths_W <- readRDS("W_correlation_lengths.rds")
+# combine
 Cr_regions = list(list_Cr_NE,list_Cr_MW, list_Cr_S, list_Cr_W)
 cor_lengths_regions = list(cor_lengths_NE, cor_lengths_MW, cor_lengths_S, cor_lengths_W)
+
+# read in poverty subsetted spatial metrics from weeks 6-165
+list_Cr_1 <- readRDS("tier1_Cr.rds")
+cor_lengths_1 <- readRDS("tier1_correlation_lengths.rds")
+list_Cr_2 <- readRDS("tier2_Cr.rds")
+cor_lengths_2 <- readRDS("tier2_correlation_lengths.rds")
+list_Cr_3 <- readRDS("tier3_Cr.rds")
+cor_lengths_3 <- readRDS("tier3_correlation_lengths.rds")
+# combine
+Cr_poverty = list(list_Cr_1,list_Cr_2, list_Cr_3)
+cor_lengths_poverty = list(cor_lengths_1, cor_lengths_2, cor_lengths_3)
 ```
 
 ## Create Dataframe for the Spatial Metrics for the Subset of Weeks
@@ -587,6 +683,8 @@ head(weekly_spatial_metrics)
 ```
 
 ```{r}
+# For Regions
+
 # initialize data frame
 regional_weekly_spatial_metrics <- data.frame(matrix(NA, nrow = 0, ncol = 54))
 colnames(regional_weekly_spatial_metrics)[1:4] <- c("week_start_date", "total_cases", "marginal_cases", "cor_lengths")
@@ -635,6 +733,53 @@ regional_weekly_spatial_metrics$south[regional_weekly_spatial_metrics$region != 
 # write.csv(regional_weekly_spatial_metrics, "regional_weekly_spatial_metrics.csv")
 ```
 
+```{r}
+# For Poverty
+
+# initialize data frame
+poverty_weekly_spatial_metrics <- data.frame(matrix(NA, nrow = 0, ncol = 54))
+colnames(poverty_weekly_spatial_metrics)[1:4] <- c("week_start_date", "total_cases", "marginal_cases", "cor_lengths")
+colnames(poverty_weekly_spatial_metrics)[5:52] <- as.character(col_names)
+colnames(poverty_weekly_spatial_metrics)[53:54] <- c("next_week_marginal_cases","poverty_tier")
+
+# Weekly Spatial Metrics for Regions
+for (r in 1:3) {
+  list_Cr = Cr_poverty[[r]]
+  cor_lengths = cor_lengths_poverty[[r]]
+  
+  # Create dataframe
+  weekly_spatial_metrics <- data.frame(matrix(NA, nrow = length(list_Cr), ncol = 52))
+  colnames(weekly_spatial_metrics)[1:4] <- c("week_start_date", "total_cases", "marginal_cases", "cor_lengths")
+  colnames(weekly_spatial_metrics)[5:52] <- as.character(col_names)
+  
+  # Fill in first few columns
+  weekly_spatial_metrics[, "week_start_date"] <- date_names
+  weekly_spatial_metrics[, "total_cases"] <- total_cases
+  weekly_spatial_metrics[, "marginal_cases"] <- c(0, diff(weekly_spatial_metrics$total_cases))
+  weekly_spatial_metrics[, "cor_lengths"] <- cor_lengths
+  
+  # Fill the data frame with list_Cr values
+  for (i in seq_along(list_Cr)) {
+    weekly_spatial_metrics[i, 5:52] <- unlist(list_Cr[[i]])
+  }
+  
+  # add next week marginal cases column
+  weekly_spatial_metrics <- weekly_spatial_metrics %>%
+    mutate(next_week_marginal_cases = dplyr::lead(marginal_cases))
+  weekly_spatial_metrics$next_week_marginal_cases[159:160] = c(NA, NA)
+  weekly_spatial_metrics$poverty_tier = rep(r, 160)
+  poverty_weekly_spatial_metrics = rbind(poverty_weekly_spatial_metrics, weekly_spatial_metrics)
+}
+
+# add wave dummies
+poverty_weekly_spatial_metrics$tier_1[poverty_weekly_spatial_metrics$poverty_tier == 1] = 1
+poverty_weekly_spatial_metrics$tier_1[poverty_weekly_spatial_metrics$poverty_tier != 1] = 0
+poverty_weekly_spatial_metrics$tier_2[poverty_weekly_spatial_metrics$poverty_tier == 2] = 1
+poverty_weekly_spatial_metrics$tier_2[poverty_weekly_spatial_metrics$poverty_tier != 2] = 0
+
+# save to cs
+# write.csv(poverty_weekly_spatial_metrics, "poverty_weekly_spatial_metrics.csv")
+```
 Output: weekly_spatial_metrics
   - Weekly data set with corresponding covid cases, spatial correlations, and correlation lengths
   - 148 rows (# weeks in subset) x 52 columns (date, cases, distance intervals)
