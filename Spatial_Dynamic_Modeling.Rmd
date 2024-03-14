@@ -49,7 +49,7 @@ names(poverty_weekly_spatial_metrics)
 Output: poverty_weekly_spatial_metrics
   - Weekly data set with corresponding covid cases, spatial correlations, and correlation lengths
   - 480 rows (weeks 6 - 165 x 3 poverty tiers) x 60 columns (date, cases, cor length, C(r), poverty dummies)
-  - features: start date of week, total cases, marginal cases, next week's marginal cases, C(r) for distance intervals from [0,50] to [970,1000], correlation length, poverty tier of pair, poverty tier of county 1, poverty tier of county 2, pov tier 1 dummy, pov tier 2 dummy, pov tier 3 dummy
+  - features: start date of week, total cases, marginal cases, next week's marginal cases, C(r) for distance intervals from [0,50] to [970,1000], correlation length, poverty tier of pair, pov tier 1 dummy, pov tier 2 dummy, pov tier 3 dummy
 
 
 # Model on entire data
