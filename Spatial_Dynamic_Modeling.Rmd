@@ -280,9 +280,8 @@ print(robust_test)
 ```
 
 ```{r}
-# Wave 1 Simple Model (weeks 9-47)
-wave1_data <- weekly_spatial_metrics_waves %>% 
-  filter(X >= 9 & X <= 47)
+# Wave 1 Simple Model (weeks 9-47: 2020-03-28 - 2020-12-19)
+wave1_data <- weekly_spatial_metrics_waves %>% filter(X >= 1 & X <= 39)
 
 wave1_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), data = wave1_data)
 
@@ -296,9 +295,8 @@ paste("a 10% increase in correlation length corresponds to a ", round(wave1_mode
 ```
 
 ```{r}
-# Wave 2 Simple Model (weeks 48-97)
-wave2_data <- weekly_spatial_metrics_waves %>% 
-  filter(X >= 48 & X <= 97)
+# Wave 2 Simple Model (weeks 48-97: 2020-12-26 - 2021-12-04)
+wave2_data <- weekly_spatial_metrics_waves %>% filter(X >= 40 & X <= 89)
 
 wave2_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), data = wave2_data)
 
@@ -312,8 +310,8 @@ paste("a 10% increase in correlation length corresponds to a ", round(wave2_mode
 ```
 
 ```{r}
-# Wave 3 Simple model (weeks 98-160)
-wave3_data <- weekly_spatial_metrics_waves %>% filter(X >= 98 & X <= 160)  
+# Wave 3 Simple model (weeks 98-160: 2021-12-11 - 2023-03-25)
+wave3_data <- weekly_spatial_metrics_waves %>% filter(X >= 90 & X <= 157)  
 
 wave3_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), data = wave3_data)
 
