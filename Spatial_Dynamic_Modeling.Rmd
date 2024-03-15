@@ -28,7 +28,10 @@ Output: weekly_spatial_metrics_waves
 ```{r}
 # Weekly Spatial Metrics with Region Columns
 regional_weekly_spatial_metrics = read.csv("regional_weekly_spatial_metrics.csv")
-head(regional_weekly_spatial_metrics)
+regional_weekly_spatial_metrics$northeast[regional_weekly_spatial_metrics$region == 'Northeast'] <- 1
+regional_weekly_spatial_metrics$midwest[regional_weekly_spatial_metrics$region == 'Midwest'] <- 1
+regional_weekly_spatial_metrics$south[regional_weekly_spatial_metrics$region == 'South'] <- 1
+regional_weekly_spatial_metrics
 ```
 Output: regional_weekly_spatial_metrics
   - Weekly data set with corresponding covid cases, spatial correlations, and correlation lengths
@@ -165,4 +168,76 @@ robust_test <- coeftest(pov_23_simple_model, vcov = vcovHC(pov_23_simple_model, 
 print(robust_test)
 # Print Result
 paste("a 10% increase in correlation length corresponds to a ", round(pov_23_simple_model$coefficients[2]*10,2),"% change in cases in the following week")
+```
+
+# Model based on regions
+
+```{r}
+# full model 
+region_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths) + northeast + midwest + south, data = regional_weekly_spatial_metrics)
+# Perform hypothesis tests with robust standard errors for heteroskedasticity
+robust_se <- sqrt(diag(vcovHC(region_model, type = "HC1")))
+
+robust_test <- coeftest(region_model, vcov = vcovHC(region_model, type = "HC1"))
+print(robust_test)
+```
+# Split into a "simple model" for subsetted data 
+
+```{r}
+# simple model for poverty tier (1,1)
+ne_weekly_spatial_metrics <- regional_weekly_spatial_metrics %>% filter(northeast == 1)
+
+northeast_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), 
+                         data = ne_weekly_spatial_metrics)
+# Perform hypothesis tests with robust standard errors for heteroskedasticity
+robust_se <- sqrt(diag(vcovHC(northeast_model, type = "HC1")))
+
+robust_test <- coeftest(northeast_model, vcov = vcovHC(northeast_model, type = "HC1"))
+print(robust_test)
+# Print Result
+paste("a 10% increase in correlation length corresponds to a ", round(northeast_model$coefficients[2]*10,2),"% change in cases in the following week")
+```
+```{r}
+# simple model for poverty tier (1,1)
+mw_weekly_spatial_metrics <- regional_weekly_spatial_metrics %>% filter(midwest == 1)
+
+midwest_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), 
+                         data = mw_weekly_spatial_metrics)
+# Perform hypothesis tests with robust standard errors for heteroskedasticity
+robust_se <- sqrt(diag(vcovHC(midwest_model, type = "HC1")))
+
+robust_test <- coeftest(midwest_model, vcov = vcovHC(midwest_model, type = "HC1"))
+print(robust_test)
+# Print Result
+paste("a 10% increase in correlation length corresponds to a ", round(midwest_model$coefficients[2]*10,2),"% change in cases in the following week")
+```
+
+```{r}
+# simple model for poverty tier (1,1)
+s_weekly_spatial_metrics <- regional_weekly_spatial_metrics %>% filter(south == 1)
+
+south_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), 
+                         data = s_weekly_spatial_metrics)
+# Perform hypothesis tests with robust standard errors for heteroskedasticity
+robust_se <- sqrt(diag(vcovHC(south_model, type = "HC1")))
+
+robust_test <- coeftest(south_model, vcov = vcovHC(south_model, type = "HC1"))
+print(robust_test)
+# Print Result
+paste("a 10% increase in correlation length corresponds to a ", round(south_model$coefficients[2]*10,2),"% change in cases in the following week")
+```
+
+```{r}
+# simple model for poverty tier (1,1)
+w_weekly_spatial_metrics <- regional_weekly_spatial_metrics %>% filter(region == 'West')
+
+west_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), 
+                         data = w_weekly_spatial_metrics)
+# Perform hypothesis tests with robust standard errors for heteroskedasticity
+robust_se <- sqrt(diag(vcovHC(west_model, type = "HC1")))
+
+robust_test <- coeftest(west_model, vcov = vcovHC(west_model, type = "HC1"))
+print(robust_test)
+# Print Result
+paste("a 10% increase in correlation length corresponds to a ", round(west_model$coefficients[2]*10,2),"% change in cases in the following week")
 ```
