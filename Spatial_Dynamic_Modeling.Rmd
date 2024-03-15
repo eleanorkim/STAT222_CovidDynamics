@@ -17,7 +17,6 @@ library(dplyr)
 ```{r}
 # Weekly Spatial Metrics with Time Wave Columns
 weekly_spatial_metrics_waves = read.csv("weekly_spatial_metrics_waves.csv")
-names(weekly_spatial_metrics_waves)
 ```
 Output: weekly_spatial_metrics_waves
   - Weekly data set with corresponding covid cases, spatial correlations, and correlation lengths
@@ -28,10 +27,6 @@ Output: weekly_spatial_metrics_waves
 ```{r}
 # Weekly Spatial Metrics with Region Columns
 regional_weekly_spatial_metrics = read.csv("regional_weekly_spatial_metrics.csv")
-regional_weekly_spatial_metrics$northeast[regional_weekly_spatial_metrics$region == 'Northeast'] <- 1
-regional_weekly_spatial_metrics$midwest[regional_weekly_spatial_metrics$region == 'Midwest'] <- 1
-regional_weekly_spatial_metrics$south[regional_weekly_spatial_metrics$region == 'South'] <- 1
-regional_weekly_spatial_metrics
 ```
 Output: regional_weekly_spatial_metrics
   - Weekly data set with corresponding covid cases, spatial correlations, and correlation lengths
@@ -41,9 +36,9 @@ Output: regional_weekly_spatial_metrics
 
 
 ```{r}
-# Weekly Spatial Metrics with Poverty Columns
+# Weekly Spatial Metrics with Poverty & Median Household Income Columns 
 poverty_weekly_spatial_metrics = read.csv("poverty_weekly_spatial_metrics.csv")
-names(poverty_weekly_spatial_metrics)
+mhhinc_weekly_spatial_metrics = read.csv("mhhinc_weekly_spatial_metrics.csv")
 ```
 Output: poverty_weekly_spatial_metrics
   - Weekly data set with corresponding covid cases, spatial correlations, and correlation lengths
