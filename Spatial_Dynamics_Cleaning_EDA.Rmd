@@ -681,11 +681,10 @@ for (select_tier1 in 1:4) {
 ## Read in Spatial Metrics Data
 
 ```{r}
-# the above loop takes a really long time to iterate through all weeks
+# the above loop takes a really long time to iterate through all weeks so we save and read in
 
-# but here is the full data 
-saveRDS(all_cor_lengths, "mhhinc_tiers_correlation_lengths.rds")
-saveRDS(all_list_Cr, "mhhinc_tiers_Cr.rds")
+# saveRDS(all_cor_lengths, "mhhinc_tiers_correlation_lengths.rds")
+# saveRDS(all_list_Cr, "mhhinc_tiers_Cr.rds")
 
 # read in full data of spatial metrics from weeks 6-165
 list_Cr <- readRDS("all_Cr.rds")
@@ -818,10 +817,30 @@ for (r in 1:4) {
   regional_weekly_spatial_metrics = rbind(regional_weekly_spatial_metrics, weekly_spatial_metrics)
 }
 
-# add wave dummies
-regional_weekly_spatial_metrics$northeast <- ifelse(regional_weekly_spatial_metrics$region == "Northeast", 1, 0)
-regional_weekly_spatial_metrics$midwest <- ifelse(regional_weekly_spatial_metrics$region == "Midwest", 1, 0)
-regional_weekly_spatial_metrics$south <- ifelse(regional_weekly_spatial_metrics$region == "South", 1, 0)
+# Add region dummies
+regional_weekly_spatial_metrics <- regional_weekly_spatial_metrics %>%
+  mutate(
+    northeast = as.integer(region == "Northeast"),
+    midwest = as.integer(region == "Midwest"),
+    south = as.integer(region == "South")
+  )
+
+# Add wave column
+regional_weekly_spatial_metrics <- regional_weekly_spatial_metrics %>%
+  mutate(
+    wave = case_when(
+      as.Date(week_start_date) >= "2021-12-11" ~ 3,
+      as.Date(week_start_date) >= "2020-12-26" ~ 2,
+      TRUE ~ 1
+    )
+  )
+
+# Add wave dummies
+regional_weekly_spatial_metrics <- regional_weekly_spatial_metrics %>%
+  mutate(
+    wave_1 = as.integer(wave == 1),
+    wave_2 = as.integer(wave == 2)
+  )
 
 # save to cs
 # write.csv(regional_weekly_spatial_metrics, "regional_weekly_spatial_metrics.csv")
@@ -864,6 +883,23 @@ for (r in 1:6) {
   weekly_spatial_metrics$poverty_tier = rep(r, 160)
   poverty_weekly_spatial_metrics = rbind(poverty_weekly_spatial_metrics, weekly_spatial_metrics)
 }
+
+# Add wave column
+poverty_weekly_spatial_metrics <- poverty_weekly_spatial_metrics %>%
+  mutate(
+    wave = case_when(
+      as.Date(week_start_date) >= "2021-12-11" ~ 3,
+      as.Date(week_start_date) >= "2020-12-26" ~ 2,
+      TRUE ~ 1
+    )
+  )
+
+# Add wave dummies
+poverty_weekly_spatial_metrics <- poverty_weekly_spatial_metrics %>%
+  mutate(
+    wave_1 = as.integer(wave == 1),
+    wave_2 = as.integer(wave == 2)
+  )
 head(poverty_weekly_spatial_metrics)
 ```
 
@@ -879,7 +915,7 @@ poverty_weekly_spatial_metrics$tier_13 <- ifelse(poverty_weekly_spatial_metrics$
 poverty_weekly_spatial_metrics$tier_23 <- ifelse(poverty_weekly_spatial_metrics$poverty_tier == 6, 1, 0)
 
 # save to cs
-write.csv(poverty_weekly_spatial_metrics, "poverty_weekly_spatial_metrics.csv")
+# write.csv(poverty_weekly_spatial_metrics, "poverty_weekly_spatial_metrics.csv")
 ```
 
 ```{r}
@@ -919,6 +955,23 @@ for (r in 1:16) {
   weekly_spatial_metrics$mhhinc_tier = rep(r, 160)
   mhhinc_weekly_spatial_metrics = rbind(mhhinc_weekly_spatial_metrics, weekly_spatial_metrics)
 }
+
+# Add wave column
+mhhinc_weekly_spatial_metrics <- mhhinc_weekly_spatial_metrics %>%
+  mutate(
+    wave = case_when(
+      as.Date(week_start_date) >= "2021-12-11" ~ 3,
+      as.Date(week_start_date) >= "2020-12-26" ~ 2,
+      TRUE ~ 1
+    )
+  )
+
+# Add wave dummies
+mhhinc_weekly_spatial_metrics <- mhhinc_weekly_spatial_metrics %>%
+  mutate(
+    wave_1 = as.integer(wave == 1),
+    wave_2 = as.integer(wave == 2)
+  )
 head(mhhinc_weekly_spatial_metrics)
 ```
 
@@ -947,7 +1000,7 @@ mhhinc_weekly_spatial_metrics <- mhhinc_weekly_spatial_metrics[, !names(mhhinc_w
 values_to_remove <- c(5, 9, 10, 13, 14, 15)
 mhhinc_weekly_spatial_metrics <- mhhinc_weekly_spatial_metrics[!mhhinc_weekly_spatial_metrics$mhhinc_tier %in% values_to_remove, ]
 # save to cs
-write.csv(mhhinc_weekly_spatial_metrics, "mhhinc_weekly_spatial_metrics.csv")
+# write.csv(mhhinc_weekly_spatial_metrics, "mhhinc_weekly_spatial_metrics.csv")
 ```
 
 
