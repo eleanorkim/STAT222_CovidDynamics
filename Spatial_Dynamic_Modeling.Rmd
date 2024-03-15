@@ -12,6 +12,7 @@ date: '2024-03-11'
 library(sandwich)
 library(lmtest)
 library(dplyr)
+library(tibble)
 ```
 
 ```{r}
@@ -38,8 +39,6 @@ Output: regional_weekly_spatial_metrics
   - 640 rows (weeks 6 - 165 x 4 regions) x 59 columns (date, cases, cor length, C(r), region dummies)
   - features: start date of week, total cases, marginal cases, next week's marginal cases, C(r) for distance intervals from [0,50] to [970,1000], correlation length, region, northeast dummy, midwest dummy, south dummy
 
-
-
 ```{r}
 # Weekly Spatial Metrics with Poverty Columns
 poverty_weekly_spatial_metrics = read.csv("poverty_weekly_spatial_metrics.csv")
@@ -49,6 +48,16 @@ Output: poverty_weekly_spatial_metrics
   - Weekly data set with corresponding covid cases, spatial correlations, and correlation lengths
   - 960 rows (weeks 6 - 165 x 6 poverty tiers) x 61 columns (date, cases, cor length, C(r), poverty dummies)
   - features: start date of week, total cases, marginal cases, next week's marginal cases, C(r) for distance intervals from [0,50] to [970,1000], correlation length, pov tier (1,1) dummy, pov tier (2,2) dummy, pov tier (3,3) dummy, pov tier (1,2) dummy, pov tier (1,3) dummy, pov tier (2,3) dummy
+
+```{r}
+# Weekly Spatial Metrics with Median Household Income Columns
+mhhinc_weekly_spatial_metrics = read.csv("mhhinc_weekly_spatial_metrics.csv")
+names(mhhinc_weekly_spatial_metrics)
+```
+Output: mhhinc_weekly_spatial_metrics
+  - Weekly data set with corresponding covid cases, spatial correlations, and correlation lengths
+  - 1600 rows (weeks 6 - 165 x 10 mhhinc tiers) x 61 columns (date, cases, cor length, C(r), mhhinc dummies)
+  - features: start date of week, total cases, marginal cases, next week's marginal cases, C(r) for distance intervals from [0,50] to [970,1000], correlation length, mmhinc dummies 
 
 # Model on entire data
 
@@ -66,11 +75,92 @@ print(robust_test)
 paste("a 10% increase in correlation length corresponds to a ", round(simple_model$coefficients[2]*10,2),"% change in cases in the following week")
 ```
 
+# Model based on median household income
+
+```{r}
+# map factor levels to tier levels 
+values <- c(1, 2, 3, 4, 6, 7, 8, 11, 12, 16)
+tiers <- c("tier_1_1", "tier_1_2", "tier_1_3", "tier_1_4",
+           "tier_2_2", "tier_2_3", "tier_2_4",
+           "tier_3_3", "tier_3_4",
+           "tier_4_4")
+mhhinc_factor_tiers <- tibble(Factor = values, Tier = tiers)
+print(mhhinc_factor_tiers)
+```
+
+```{r}
+# full model 
+full_mhhinc_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths) +
+                        factor(mhhinc_tier), 
+                     data = mhhinc_weekly_spatial_metrics)
+# Perform hypothesis tests with robust standard errors for heteroskedasticity
+robust_se <- sqrt(diag(vcovHC(full_mhhinc_model, type = "HC1")))
+
+robust_test <- coeftest(full_mhhinc_model, vcov = vcovHC(full_mhhinc_model, type = "HC1"))
+print(robust_test)
+```
+
+```{r}
+# full model with interaction terms 
+full_mhhinc_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths) *
+                        factor(mhhinc_tier), 
+                     data = mhhinc_weekly_spatial_metrics)
+# Perform hypothesis tests with robust standard errors for heteroskedasticity
+robust_se <- sqrt(diag(vcovHC(full_mhhinc_model, type = "HC1")))
+
+robust_test <- coeftest(full_mhhinc_model, vcov = vcovHC(full_mhhinc_model, type = "HC1"))
+print(robust_test)
+```
+
+```{r}
+# split into "simple model" for subsetted data 
+
+for(i in 1:nrow(mhhinc_factor_tiers)) {
+  # Dynamic filtering based on tier
+  tier_value <- mhhinc_factor_tiers$Tier[i]
+  #filter_condition <- paste0(tier_value, " == 1")
+  mhhinc_weekly_spatial_metrics_subset <- mhhinc_weekly_spatial_metrics %>%
+    filter(!!rlang::sym(tier_value) == 1)
+  
+  # Linear model
+  mhhinc_simple_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), 
+                           data = mhhinc_weekly_spatial_metrics_subset)
+  
+  # Perform hypothesis tests with robust standard errors for heteroskedasticity
+  robust_se <- sqrt(diag(vcovHC(mhhinc_simple_model, type = "HC1")))
+  
+  robust_test <- coeftest(mhhinc_simple_model, vcov = vcovHC(mhhinc_simple_model, type = "HC1"))
+  print(robust_test)
+  
+  # Print result
+  result <- paste("A 10% increase in correlation length corresponds to a ", 
+                  round(mhhinc_simple_model$coefficients[2]*10,2),
+                  "% change in cases in the following week for counties in ", tier_value, "mhhinc.")
+  print(result)
+}
+```
+
 # Model based on poverty tiers  
 
 ```{r}
 # full model 
-full_pov_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths) + pov_tier_1 + pov_tier_2, data = poverty_weekly_spatial_metrics)
+full_pov_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths) + 
+                       tier_11 + tier_22 + tier_33 +tier_12 + tier_13, 
+                     data = poverty_weekly_spatial_metrics)
+# Perform hypothesis tests with robust standard errors for heteroskedasticity
+robust_se <- sqrt(diag(vcovHC(full_pov_model, type = "HC1")))
+
+robust_test <- coeftest(full_pov_model, vcov = vcovHC(full_pov_model, type = "HC1"))
+print(robust_test)
+```
+
+```{r}
+# full model with interaction terms 
+full_pov_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths) + 
+                       tier_11  + tier_22 + tier_33 + tier_12 + tier_13 + 
+                       log(cor_lengths) * tier_11 + log(cor_lengths) * tier_22 + log(cor_lengths) * tier_33 
+                     + log(cor_lengths) * tier_12 + log(cor_lengths) * tier_13, 
+                     data = poverty_weekly_spatial_metrics)
 # Perform hypothesis tests with robust standard errors for heteroskedasticity
 robust_se <- sqrt(diag(vcovHC(full_pov_model, type = "HC1")))
 
@@ -81,93 +171,28 @@ print(robust_test)
 ```{r}
 # split into a "simple model" for subsetted data 
 
-# simple model for poverty tier (1,1)
-pov_11_weekly_spatial_metrics <- poverty_weekly_spatial_metrics %>% filter(tier_11 == 1)
+# vector of tier names
+pov_tiers <- c("tier_11", "tier_22", "tier_33", "tier_12", "tier_13", "tier_23")
+for(tier_value in pov_tiers) {
+  # Dynamic filtering based on the current tier in the loop
+  pov_weekly_spatial_metrics_subset <- poverty_weekly_spatial_metrics %>%
+    filter(!!rlang::sym(tier_value) == 1)
+  
+  # Linear model
+  pov_simple_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), 
+                            data = pov_weekly_spatial_metrics_subset)
+  
+  # Perform hypothesis tests with robust standard errors for heteroskedasticity
+  robust_test <- coeftest(pov_simple_model, vcov = vcovHC(pov_simple_model, type = "HC1"))
+  print(robust_test)
+  
+  # Print result
+  result <- paste("A 10% increase in correlation length corresponds to a ", 
+                  round(pov_simple_model$coefficients[2]*10,2),
+                  "% change in cases in the following week for counties in ", tier_value, "for poverty.")
+  print(result)
+}
 
-pov_11_simple_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), 
-                         data = pov_11_weekly_spatial_metrics)
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(pov_11_simple_model, type = "HC1")))
-
-robust_test <- coeftest(pov_11_simple_model, vcov = vcovHC(pov_11_simple_model, type = "HC1"))
-print(robust_test)
-# Print Result
-paste("a 10% increase in correlation length corresponds to a ", round(pov_11_simple_model$coefficients[2]*10,2),"% change in cases in the following week")
-```
-
-```{r}
-# simple model for poverty tier (2,2)
-pov_22_weekly_spatial_metrics <- poverty_weekly_spatial_metrics %>% filter(tier_22 == 1)
-
-pov_22_simple_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), 
-                         data = pov_22_weekly_spatial_metrics)
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(pov_22_simple_model, type = "HC1")))
-
-robust_test <- coeftest(pov_22_simple_model, vcov = vcovHC(pov_22_simple_model, type = "HC1"))
-print(robust_test)
-# Print Result
-paste("a 10% increase in correlation length corresponds to a ", round(pov_22_simple_model$coefficients[2]*10,2),"% change in cases in the following week")
-```
-
-```{r}
-# simple model for poverty tier (3,3)
-pov_33_weekly_spatial_metrics <- poverty_weekly_spatial_metrics %>% filter(tier_33 == 1)
-
-pov_33_simple_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), 
-                         data = pov_33_weekly_spatial_metrics)
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(pov_33_simple_model, type = "HC1")))
-
-robust_test <- coeftest(pov_33_simple_model, vcov = vcovHC(pov_33_simple_model, type = "HC1"))
-print(robust_test)
-# Print Result
-paste("a 10% increase in correlation length corresponds to a ", round(pov_33_simple_model$coefficients[2]*10,2),"% change in cases in the following week")
-```
-
-```{r}
-# simple model for poverty tier (1,2)
-pov_12_weekly_spatial_metrics <- poverty_weekly_spatial_metrics %>% filter(tier_12 == 1)
-
-pov_12_simple_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), 
-                         data = pov_12_weekly_spatial_metrics)
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(pov_12_simple_model, type = "HC1")))
-
-robust_test <- coeftest(pov_12_simple_model, vcov = vcovHC(pov_12_simple_model, type = "HC1"))
-print(robust_test)
-# Print Result
-paste("a 10% increase in correlation length corresponds to a ", round(pov_12_simple_model$coefficients[2]*10,2),"% change in cases in the following week")
-```
-
-```{r}
-# simple model for poverty tier (1,3)
-pov_13_weekly_spatial_metrics <- poverty_weekly_spatial_metrics %>% filter(tier_13 == 1)
-
-pov_13_simple_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), 
-                         data = pov_13_weekly_spatial_metrics)
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(pov_13_simple_model, type = "HC1")))
-
-robust_test <- coeftest(pov_13_simple_model, vcov = vcovHC(pov_13_simple_model, type = "HC1"))
-print(robust_test)
-# Print Result
-paste("a 10% increase in correlation length corresponds to a ", round(pov_13_simple_model$coefficients[2]*10,2),"% change in cases in the following week")
-```
-
-```{r}
-# simple model for poverty tier (2,3)
-pov_23_weekly_spatial_metrics <- poverty_weekly_spatial_metrics %>% filter(tier_23 == 1)
-
-pov_23_simple_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), 
-                         data = pov_23_weekly_spatial_metrics)
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(pov_23_simple_model, type = "HC1")))
-
-robust_test <- coeftest(pov_23_simple_model, vcov = vcovHC(pov_23_simple_model, type = "HC1"))
-print(robust_test)
-# Print Result
-paste("a 10% increase in correlation length corresponds to a ", round(pov_23_simple_model$coefficients[2]*10,2),"% change in cases in the following week")
 ```
 
 # Model based on regions
