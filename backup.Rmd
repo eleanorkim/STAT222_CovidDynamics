@@ -1,0 +1,1597 @@
+---
+title: "Spatial Dynamics - Cleaning and Exploratory Data Analysis"
+subtitle: "Aarushi Somani, Eleanor Kim, Lauren Murai, Meichen Chen"
+output:
+  pdf_document: default
+  html_document: default
+date: '2024-02-13'
+---
+
+```{r}
+#load packages
+library(readxl)
+library(stringr)
+library(dplyr)
+library(geosphere)
+library(sandwich)
+library(lmtest)
+library(tidyr)
+library(ggplot2)
+library(openxlsx)
+```
+
+# Data Cleaning
+
+## Prepare county-level data set with population and coordinate points
+
+Input data: 2023_Gaz_counties_national.txt
+
+```{r}
+# Read in national county data 
+counties = read.table("2023_Gaz_counties_national.txt", header = TRUE, sep = "\t")
+
+# Clean fips code column
+counties$GEOID = str_pad(counties$GEOID, width = 5, side = "left", pad = "0")
+
+# Drop cols
+cols_drop = c('ANSICODE','ALAND','AWATER','AWATER_SQMI')
+counties = counties[, !names(counties) %in% cols_drop]
+
+# Merge with population
+population = read_excel("PopulationEstimates.xlsx", skip = 4, col_names = TRUE)
+counties_pop = merge(counties, population[, c("FIPStxt", "CENSUS_2020_POP")], 
+                     by.x = "GEOID", by.y = "FIPStxt", all.x = TRUE)
+
+# Drop counties with pop < 10k
+county_subset = filter(counties_pop, CENSUS_2020_POP >= 10000)
+nrow(county_subset) # 2229
+
+# Rename cols
+names(county_subset) = c('fips','state','county','land_sqkm', 'latitude','longitude','population')
+
+# Convert area of land in sq mi to sq km
+county_subset$land_sqkm = county_subset$land_sqkm*2.58999
+
+# Create a function to map states to regions
+assign_region <- function(state) {
+  northeast_states <- c('CT', 'ME', 'MA', 'NH', 'RI', 'VT', 'NY', 'NJ', 'PA')
+  west_states <- c('WA', 'OR', 'CA', 'NV', 'ID', 'MT', 'WY', 'UT', 'CO', 'NM', 'AZ', 'AK', 'HI')
+  south_states <- c('TX', 'OK', 'AR', 'LA', 'MS', 'AL', 'TN', 'KY', 'FL', 'GA', 'SC', 'NC', 'VA', 'WV', 'MD', 'DE', 'DC')
+  midwest_states <- c('ND', 'SD', 'NE', 'KS', 'MN', 'IA', 'MO', 'WI', 'IL', 'IN', 'OH', 'MI')
+
+  if (state %in% northeast_states) {
+    return('Northeast')
+  } else if (state %in% west_states) {
+    return('West')
+  } else if (state %in% south_states) {
+    return('South')
+  } else if (state %in% midwest_states) {
+    return('Midwest')
+  } else {
+    return('Unknown')
+  }
+}
+
+# Create region column
+county_subset <- county_subset %>%
+  mutate(region = sapply(state, assign_region))
+
+# Remove unknown region counties (PR)
+states_unknwon = filter(county_subset, region== "Unknown")$state
+county_df = filter(county_subset, region!= "Unknown")
+
+# Inspect
+nrow(county_df) # 2155
+head(county_df)
+```
+
+Output: county_df
+  - County level data set
+  - 2155 rows (counties) x 8 columns (county features)
+  - features: fips, state, county name, land area (sq km), latitude of centroid, longitude of centroid, population, region
+```{r}
+# add poverty tiers to county_dr
+poverty = read_xlsx("Poverty_Tiers.xlsx")
+county_df <- merge(county_df, poverty, by.x = "fips", by.y = "FIPS_Code", all.x = TRUE)
+```
+
+## Calculate pairwise distances between counties
+
+```{r}
+# Create all possible combinations of counties (unique pairs)
+county_combinations <- expand.grid(county_df$fips, county_df$fips)
+colnames(county_combinations) <- c("fips1", "fips2")
+
+# Remove rows where fips1 is equal to fips2 to avoid self-comparisons
+county_combinations <- county_combinations[county_combinations$fips1 != county_combinations$fips2, ]
+
+# Merge with the original data to get the coordinates for each county
+merged_data <- merge(county_combinations, county_df, by.x = "fips1", by.y = "fips", all.x = TRUE)
+merged_data <- merge(merged_data, county_df, by.x = "fips2", by.y = "fips", all.x = TRUE, suffixes = c("_1", "_2"))
+
+# Calculate distances between coordinate points
+merged_data$distance <- distVincentySphere(
+  cbind(merged_data$longitude_1, merged_data$latitude_1),
+  cbind(merged_data$longitude_2, merged_data$latitude_2)
+)
+```
+
+```{r}
+# Convert distance from meters to kilometers
+merged_data$distance_km <- merged_data$distance / 1000
+
+#Inspect the distribution of distances
+hist(merged_data$distance_km)
+
+# Only include counties within 1000 km
+pairwise_counties = filter(merged_data, distance_km<=1000)
+
+# Inspect data
+nrow(pairwise_counties) # 1831972
+head(pairwise_counties)
+```
+
+
+```{r}
+# Create r intervals: [r, r+rd]
+# r_upper = 50 *(1:20)
+# r_lower = c(0,r_upper[1:19])
+
+r_upper = c(50, 50+20 *(1:46), 1000)
+r_lower = c(0,r_upper[1:47])
+
+# Add r_i indexes 1,2,....
+pairwise_counties$r_i <- cut(
+  pairwise_counties$distance_km, 
+  breaks = c(-Inf, r_upper, Inf), 
+  labels = 1:(length(r_upper) + 1),  # Adjusted length for labels
+  include.lowest = TRUE
+)
+
+# Add r col
+pairwise_counties$r <- round(r_upper[pairwise_counties$r_i],2)
+pairwise_counties$r_i = as.numeric(pairwise_counties$r_i)
+```
+
+Output: pairwise_counties
+  - County1-County2 pairwise data set
+  - 1831972 rows (county pairs) x 20 columns (county features, distance metrics)
+  - features: fips, state, county name, land area (sq km), latitude of centroid, longitude of centroid, population, region - for both county 1 and county 2, distance in km, upper bound of distance interval (r), distance interval index (r_i)
+
+## Aggregate Covid Data (from Meichen's code)
+
+Input data (4): us-counties-2020.csv, us-counties-2021.csv, us-counties-2022.csv, PopulationEstimates.xlsx
+
+```{r}
+# read in covid data
+covid2020_raw <- read.csv("us-counties-2020.csv")
+covid2021_raw <- read.csv("us-counties-2021.csv")
+covid2022_raw <- read.csv("us-counties-2022.csv")
+covid2023_raw <- read.csv("us-counties-2023.csv")
+```
+
+```{r}
+# "starting on February 1 2020, we aggregate the total number of newly infected cases 
+# in a given county over the previous 7 days (including the given day) 
+# and calculate the daily average during this time period."
+
+# I originally made this a function bc i was gonna apply it to all 3 
+# covid datsets, but then I realized I should combine all 3 datasets
+# and then run the function once, so the time is continuous 
+
+create_daily_avg_by_week <- function(df, start_date){
+    # convert fips to string and add leading 0 if needed 
+    # (should be 5 char long)
+    df$fips = as.character(df$fips)
+    df$fips = str_pad(df$fips, width = 5, side = "left", pad = "0")
+    
+    # drop rows that have NA's for fips code
+    df <- df[!is.na(df$fips), ]
+    
+    # add county name column
+    df$county = as.character(df$county)
+    df$state = as.character(df$state)
+    
+    # Convert the date column to a Date object
+    df$date <- as.Date(df$date, format = "%Y-%m-%d")
+
+    # drop any rows that are recorded before start_date
+    # retain rows recorded on start date
+    df <- df %>% filter(date >= start_date) 
+
+    # Create a week column that increases with every 7 days from the start date
+    df$week <- as.integer(ceiling(as.numeric(df$date - start_date + 1) / 7))
+
+    # Group by FIPS code and week, then summarize cases
+    daily_avg <- df %>% group_by(fips, county, state, week) %>%
+        summarize(total_cases = sum(cases), 
+            avg_daily_cases = sum(cases) / 7,
+            total_deaths = sum(deaths),
+            avg_daily_deaths = sum(deaths) / 7, 
+            .groups = 'drop')
+    
+    daily_avg
+}
+
+# combine all into one dataset 
+covid_raw = rbind(covid2020_raw, covid2021_raw, covid2022_raw, covid2023_raw)
+start_date <- as.Date("2020-01-26")
+covid_daily_avg <- create_daily_avg_by_week(covid_raw, start_date)
+
+# Add start date of week column
+covid_daily_avg$start_date <- as.Date("2020-02-01") + (covid_daily_avg$week - 1) * 7
+
+# Create region column
+assign_region <- function(state) {
+  northeast_states <- c('Connecticut', 'Maine', 'Massachusetts', 'New Hampshire', 'Rhode Island', 'Vermont', 'New York', 'New Jersey', 'Pennsylvania')
+  west_states <- c('Washington', 'Oregon', 'California', 'Nevada', 'Idaho', 'Montana', 'Wyoming', 'Utah', 'Colorado', 'New Mexico', 'Arizona', 'Alaska', 'Hawaii')
+  south_states <- c('Texas', 'Oklahoma', 'Arkansas', 'Louisiana', 'Mississippi', 'Alabama', 'Tennessee', 'Kentucky', 'Florida', 'Georgia', 'South Carolina', 'North Carolina', 'Virginia', 'West Virginia', 'Maryland', 'Delaware', 'District of Columbia')
+  midwest_states <- c('North Dakota', 'South Dakota', 'Nebraska', 'Kansas', 'Minnesota', 'Iowa', 'Missouri', 'Wisconsin', 'Illinois', 'Indiana', 'Ohio', 'Michigan')
+
+  if (state %in% northeast_states) {
+    return('Northeast')
+  } else if (state %in% west_states) {
+    return('West')
+  } else if (state %in% south_states) {
+    return('South')
+  } else if (state %in% midwest_states) {
+    return('Midwest')
+  } else {
+    return('Unknown')
+  }
+}
+
+covid_daily_avg <- covid_daily_avg %>%
+  mutate(region = sapply(state, assign_region))
+
+# Remove unknown region counties (PR)
+states_unknwon = filter(covid_daily_avg, region== "Unknown")$state
+covid_daily_avg = filter(covid_daily_avg, region!= "Unknown")
+
+head(covid_daily_avg)
+tail(covid_daily_avg)
+
+```
+
+```{r}
+# Read in population data
+population_raw <- read_xlsx("PopulationEstimates.xlsx")
+population <- population_raw[-(1:3), ]
+
+# Set the column names of to be the values of the first row
+colnames(population) <- as.character(unlist(population[1, ]))
+population <- population[-1, ]
+# remove first row of data since it's for entirety of USA
+population <- population[-1, ]
+
+# extract population estimates
+population <- population[, c("FIPStxt", "POP_ESTIMATE_2020", "POP_ESTIMATE_2021", "POP_ESTIMATE_2022")]
+population[, 2:4] <- lapply(population[, 2:4], as.numeric)
+
+# add average population 2020 - 2022 as we define socioeconomic factors as fixed 
+population$avg_pop <- rowMeans(population[, 2:4], na.rm = TRUE)
+```
+
+```{r}
+# "We then convert this number to the average daily fraction of the population 
+# in each county that was infected during this week 
+# by dividing with the county population." 
+
+covid_daily_avg_pop <- covid_daily_avg %>%
+    left_join(population, by = c("fips" = "FIPStxt")) %>%
+    select(fips, county, region, week, total_cases, total_deaths, 
+           avg_daily_cases, avg_daily_deaths, start_date, avg_pop)
+
+head(covid_daily_avg_pop)
+```
+
+```{r}
+# "We remove 697 counties with a population less than 10,000 
+# because a small change in the number of cases in a small population 
+# can lead to large fluctuations, which results in a total of 2411 counties"
+
+county_week <- covid_daily_avg_pop %>%
+  # Remove rows where avg_pop is less than 10000
+  # or avg_pop is null
+  filter(avg_pop >= 10000, !is.na(avg_pop)) %>%
+  # divide by population
+  mutate(fract_avg_daily_cases = avg_daily_cases / avg_pop,
+         fract_avg_daily_deaths = avg_daily_deaths / avg_pop) %>%
+  select(fips, county, region, week, total_cases, total_deaths, avg_daily_cases, avg_daily_deaths,
+           fract_avg_daily_cases, fract_avg_daily_deaths,start_date, avg_pop)
+
+nrow(county_week)
+head(county_week)
+```
+
+
+### Detrend data: Add X_T(i) column
+
+```{r}
+# Sort the data frame by fips and week
+county_week <- county_week[order(county_week$fips, county_week$week), ]
+
+# Creat X_T column
+county_week <- county_week %>%
+  arrange(fips, week) %>%
+  group_by(fips) %>%
+  mutate(X_T = fract_avg_daily_cases - lag(fract_avg_daily_cases, default = 0, order_by = week))
+
+nrow(county_week) # 357104
+head(county_week)
+county_week$county_name <- paste(county_week$county, "County", sep = " ")
+# write.csv(county_week, "county_week.csv")
+```
+
+Output: county_week
+  - county and week panel data set with covid stats
+  - 357104 rows (county-week) x 12 columns (time columns, covid cases)
+  - features: fips, county, week, total_cases, total_deaths, fract_avg_daily_cases (this is Z_T(i) in the paper), start_date, avg_pop, month_year, X_T ("the extent to which the relative number of cases increased or decreased on a given week T compared to the previous week T-1")
+
+```{r}
+# add poverty tiers to county_week
+county_week<- merge(county_week, poverty, by.x = "fips", by.y = "FIPS_Code", all.x = TRUE)
+```
+
+## Merge X_T's onto pairwise county data for fixed T for each pair county1-county2
+
+```{r}
+# set T
+T = 12 # can change to anything 1-153
+county_week_T = filter(county_week, week == T)
+nrow(county_week_T) # 2319 rows (how many counties observed for that week)
+head(county_week_T)
+```
+
+```{r}
+# Merge data frames based on fips1
+counties_covid_1 <- merge(pairwise_counties, county_week_T[, c("fips", "X_T")], by.x = "fips1", by.y = "fips", all.x = TRUE, suffixes = c("", "_1"))
+names(counties_covid_1)[names(counties_covid_1) == "X_T"] <- "X_T_1"
+
+# Merge data frames based on fips2
+covid_counties_1_2 <- merge(counties_covid_1, county_week_T[, c("fips", "X_T")], by.x = "fips2", by.y = "fips", all.x = TRUE, suffixes = c("", "_2"))
+names(covid_counties_1_2)[names(covid_counties_1_2) == "X_T"] <- "X_T_2"
+
+# Add T column
+covid_counties_1_2$T = rep(T, nrow(covid_counties_1_2))
+
+# Remove rows where X_T is NA (no covid data for county pair)
+covid_counties_1_2 = covid_counties_1_2[!is.na(covid_counties_1_2$X_T_1) & !is.na(covid_counties_1_2$X_T_2), ]
+
+# Inspect
+nrow(covid_counties_1_2) # 1727668
+head(covid_counties_1_2)
+# write.csv(covid_counties_1_2, "covid_counties_1_2.csv")
+```
+
+Output: covid_counties_1_2
+  - County1-County2 pairwise data set with X_T_1 and X_T_2 for some fixed T
+  - 1778927 rows (county pairs) x 20 columns (county features, distance metrics, X_T for county 1 and for county 2, week T)
+  - features: fips, state, county name, land area (sq km), latitude of centroid, longitude of centroid, population, region - for both county 1 and county 2, distance in km, upper bound of distance interval (r), distance interval index (r_i), X_T_1, X_T_2, week T
+
+# Calculations of Spatial Metrics
+
+## Calculate Spatial Correlations and Correlation Lengths for Week T
+
+```{r}
+# For just week T
+
+# Initialize empty vectors to store results
+n = length(r_upper)
+m_1 <- numeric(n)
+m_2 <- numeric(n)
+s2_1 <- numeric(n)
+s2_2 <- numeric(n)
+C_r_T <- numeric(n)
+significant <- numeric(n)
+
+# For loop to calculate means and variances for each unique r_i, a distance interval between counties
+for (i in 1:n) {
+  X_T_1_r <- covid_counties_1_2$X_T_1[covid_counties_1_2$r_i == i]
+  X_T_2_r <- covid_counties_1_2$X_T_2[covid_counties_1_2$r_i == i]
+  
+  # Calculate means
+  m_1[i] <- mean(X_T_1_r)
+  m_2[i] <- mean(X_T_2_r)
+  
+  # Calculate variances
+  s2_1[i] <- sum((X_T_1_r - m_1[i])^2) / length(X_T_1_r)
+  s2_2[i] <- sum((X_T_2_r - m_2[i])^2) / length(X_T_2_r)
+  
+# Correlation function
+  numerator = sum(X_T_1_r*X_T_2_r - m_1[i]*m_2[i])/length(X_T_1_r)
+  denominator = sqrt(s2_1[i]*s2_2[i])
+  C_r_T[i] = numerator/denominator # same as 
+  C_r_T[i] = cor(X_T_1_r, X_T_2_r)
+  
+  # is C_r_T significant?
+  significant[i] = (cor.test(X_T_1_r, X_T_2_r, method = "spearman")$p.value < .01)
+
+}
+
+# Calculate correlation length
+mid_point_intervals = (r_upper+r_lower)/2
+first_zero = which(significant == 0)[1]
+xi_2 = mid_point_intervals[first_zero]
+```
+
+Output: 
+  - Spatial correlation C(r) 
+    - "the average of the correlation of XT over all counties at distance r" for a fixed week T)
+    - vector length 48 because we have 48 subintervals of r (distance in km between pairwise counties)
+  - Correlation length xi
+    - the minimum distance where the Spatial Correlation is 0, i.e. C_T(xi) = 0
+
+```{r}
+# Plot C(r) against r
+plot(r_lower, C_r_T, type = "l", xlab = "Distance Between County Centroids r (km)", ylab = "Spatial Correlation in Covid Cases C(r)", main = paste("Spatial Correlation and Correlation Length in Week", T), col="blue", cex.lab=.8)
+# Add vertical line for xi correlation length (min r where C(r) = 0)
+abline(v = xi_2, col = "red", lty = 2) 
+abline(h = 0, col = "black", lty = 1) 
+legend("topright", legend = c("C(r)",expression(paste(argmin[r]~C(r) == 0))), col = c("blue", "red"), lty = c(1, 2))
+
+
+```
+
+
+## Calculate Spatial Correlations and Correlation Lengths for a subset of weeks - Takes a Long Time
+
+
+### Region Subsets
+
+```{r}
+# R always terminates when I do a for loop so i just run this chunk 4 times for each region
+# table(county_week$region)
+select_region = "West"
+subset_pairwise_counties = filter(pairwise_counties, region_1 == select_region)
+subset_county_week = filter(county_week, region == select_region)
+
+#Initialize vectors
+list_Cr_W = c()
+cor_lengths_W = c()
+
+# up until week 5 we have < 22 observations
+week_start = 6
+week_end = 165
+    
+# Iterate over each week
+for (w in week_start:week_end) {
+    # Subset covid data by fixing week T
+    county_week_T = filter(subset_county_week, week == w)
+  
+    # Merge data frames based on fips1
+    counties_covid_1 <- merge(subset_pairwise_counties, county_week_T[, c("fips", "X_T")], by.x = "fips1", by.y = "fips", all.x = TRUE, suffixes = c("", "_1"))
+    names(counties_covid_1)[names(counties_covid_1) == "X_T"] <- "X_T_1"
+    
+    # Merge data frames based on fips2
+    covid_counties_1_2 <- merge(counties_covid_1, county_week_T[, c("fips", "X_T")], by.x = "fips2", by.y = "fips", all.x = TRUE, suffixes = c("", "_2"))
+    names(covid_counties_1_2)[names(covid_counties_1_2) == "X_T"] <- "X_T_2"
+    
+    # Add T column
+    covid_counties_1_2$T = rep(w, nrow(covid_counties_1_2))
+    
+    # Remove rows where X_T is NA (no covid data for county pair)
+    covid_counties_1_2 = covid_counties_1_2[!is.na(covid_counties_1_2$X_T_1) & !is.na(covid_counties_1_2$X_T_2), ]
+      
+    # Initialize empty vectors to store results
+    n = length(r_upper)
+    m_1 <- numeric(n)
+    m_2 <- numeric(n)
+    s2_1 <- numeric(n)
+    s2_2 <- numeric(n)
+    C_r_T <- numeric(n)
+    significant <- numeric(n)
+  
+    # For loop to calculate spatial correlation for each unique r_i, a distance interval between counties
+    for (i in 1:n) {
+      X_T_1_r <- covid_counties_1_2$X_T_1[covid_counties_1_2$r_i == i]
+      X_T_2_r <- covid_counties_1_2$X_T_2[covid_counties_1_2$r_i == i]
+      
+      # we need enough observations in data to run correlation test
+      if (length(X_T_1_r) > 3  && length(X_T_2_r) > 3) {
+        C_r_T[i] = cor(X_T_1_r, X_T_2_r)
+        significant[i] = (cor.test(X_T_1_r, X_T_2_r)$p.value < 0.01)
+      } else {
+        C_r_T[i] = NA
+        significant[i] = FALSE
+      }
+}
+  
+    # Calculate correlation length
+    mid_point_intervals = (r_upper+r_lower)/2
+    first_zero = which(significant == 0)[1]
+    xi_2 = mid_point_intervals[first_zero]
+  
+    # Save to vector/list
+    cor_lengths_W[w-week_start+1] =  xi_2
+    list_Cr_W[[w-week_start+1]] <- C_r_T
+}
+```
+
+
+### Poverty Subsets
+
+
+```{r}
+# R always terminates when I do a for loop so i just run this chunk 4 times for each region
+select_tier = 2
+subset_pairwise_counties = filter(pairwise_counties, Tier_Poverty_1 == select_tier & Tier_Poverty_2 ==select_tier)
+subset_county_week = filter(county_week, Tier_Poverty == select_tier)
+
+#Initialize vectors
+list_Cr_2 = c()
+cor_lengths_2 = c()
+
+# up until week 5 we have < 22 observations
+week_start = 6
+week_end = 165
+    
+# Iterate over each week
+for (w in week_start:week_end) {
+    # Subset covid data by fixing week T
+    county_week_T = filter(subset_county_week, week == w)
+  
+    # Merge data frames based on fips1
+    counties_covid_1 <- merge(subset_pairwise_counties, county_week_T[, c("fips", "X_T")], by.x = "fips1", by.y = "fips", all.x = TRUE, suffixes = c("", "_1"))
+    names(counties_covid_1)[names(counties_covid_1) == "X_T"] <- "X_T_1"
+    
+    # Merge data frames based on fips2
+    covid_counties_1_2 <- merge(counties_covid_1, county_week_T[, c("fips", "X_T")], by.x = "fips2", by.y = "fips", all.x = TRUE, suffixes = c("", "_2"))
+    names(covid_counties_1_2)[names(covid_counties_1_2) == "X_T"] <- "X_T_2"
+    
+    # Add T column
+    covid_counties_1_2$T = rep(w, nrow(covid_counties_1_2))
+    
+    # Remove rows where X_T is NA (no covid data for county pair)
+    covid_counties_1_2 = covid_counties_1_2[!is.na(covid_counties_1_2$X_T_1) & !is.na(covid_counties_1_2$X_T_2), ]
+      
+    # Initialize empty vectors to store results
+    n = length(r_upper)
+    m_1 <- numeric(n)
+    m_2 <- numeric(n)
+    s2_1 <- numeric(n)
+    s2_2 <- numeric(n)
+    C_r_T <- numeric(n)
+    significant <- numeric(n)
+  
+    # For loop to calculate spatial correlation for each unique r_i, a distance interval between counties
+    for (i in 1:n) {
+      X_T_1_r <- covid_counties_1_2$X_T_1[covid_counties_1_2$r_i == i]
+      X_T_2_r <- covid_counties_1_2$X_T_2[covid_counties_1_2$r_i == i]
+      
+      # we need enough observations in data to run correlation test
+      if (length(X_T_1_r) > 3  && length(X_T_2_r) > 3) {
+        C_r_T[i] = cor(X_T_1_r, X_T_2_r)
+        significant[i] = (cor.test(X_T_1_r, X_T_2_r)$p.value < 0.01)
+      } else {
+        C_r_T[i] = NA
+        significant[i] = FALSE
+      }
+}
+  
+    # Calculate correlation length
+    mid_point_intervals = (r_upper+r_lower)/2
+    first_zero = which(significant == 0)[1]
+    xi_2 = mid_point_intervals[first_zero]
+  
+    # Save to vector/list
+    cor_lengths_2[w-week_start+1] =  xi_2
+    list_Cr_2[[w-week_start+1]] <- C_r_T
+}
+1+1
+```
+
+```{r}
+1+1
+```
+
+
+## Read in Spatial Metrics Data
+
+```{r}
+# the above loop takes a really long time to iterate through all weeks
+
+# but here is the full data 
+saveRDS(cor_lengths_1, "tier1_correlation_lengths.rds")
+saveRDS(list_Cr_1, "tier1_Cr.rds")
+
+# read in full data of spatial metrics from weeks 6-165
+list_Cr <- readRDS("all_Cr.rds")
+cor_lengths <- readRDS("all_correlation_lengths.rds")
+
+# read in the region subsetted spatial metrics from weeks 6-165
+list_Cr_NE <- readRDS("NE_Cr.rds")
+cor_lengths_NE <- readRDS("NE_correlation_lengths.rds")
+list_Cr_MW <- readRDS("MW_Cr.rds")
+cor_lengths_MW <- readRDS("MW_correlation_lengths.rds")
+list_Cr_S <- readRDS("S_Cr.rds")
+cor_lengths_S <- readRDS("S_correlation_lengths.rds")
+list_Cr_W <- readRDS("W_Cr.rds")
+cor_lengths_W <- readRDS("W_correlation_lengths.rds")
+# combine
+Cr_regions = list(list_Cr_NE,list_Cr_MW, list_Cr_S, list_Cr_W)
+cor_lengths_regions = list(cor_lengths_NE, cor_lengths_MW, cor_lengths_S, cor_lengths_W)
+
+# read in poverty subsetted spatial metrics from weeks 6-165
+list_Cr_1 <- readRDS("tier1_Cr.rds")
+cor_lengths_1 <- readRDS("tier1_correlation_lengths.rds")
+list_Cr_2 <- readRDS("tier2_Cr.rds")
+cor_lengths_2 <- readRDS("tier2_correlation_lengths.rds")
+list_Cr_3 <- readRDS("tier3_Cr.rds")
+cor_lengths_3 <- readRDS("tier3_correlation_lengths.rds")
+# combine
+Cr_poverty = list(list_Cr_1,list_Cr_2, list_Cr_3)
+cor_lengths_poverty = list(cor_lengths_1, cor_lengths_2, cor_lengths_3)
+```
+
+## Create Dataframe for the Spatial Metrics for the Subset of Weeks
+
+```{r}
+# prepare distance interval column names
+col_names <- paste("r", r_lower, r_upper, sep = "_")
+
+# prepare date column
+dates = unique(county_week$start_date)
+dates = as.Date(dates)
+sorted_dates <- dates[order(dates)]
+date_names = as.character(sorted_dates)[6:165]
+
+# prepare total new cases column
+total_cases_by_week <- county_week %>%
+  group_by(week) %>%
+  summarize(total_cases = sum(total_cases, na.rm = TRUE))
+total_cases = total_cases_by_week[6:165,2]
+tail(county_week)
+```
+
+```{r}
+# Weekly Spatial Metrics for Entire data set
+
+# Create dataframe
+weekly_spatial_metrics <- data.frame(matrix(NA, nrow = length(list_Cr), ncol = 52))
+names(weekly_spatial_metrics)
+colnames(weekly_spatial_metrics)[1:4] <- c("week_start_date", "total_cases", "marginal_cases", "cor_lengths")
+colnames(weekly_spatial_metrics)[5:52] <- as.character(col_names)
+
+# Fill in first few columns
+weekly_spatial_metrics[, "week_start_date"] <- date_names
+weekly_spatial_metrics[, "total_cases"] <- total_cases
+weekly_spatial_metrics[, "marginal_cases"] <- c(0, diff(weekly_spatial_metrics$total_cases))
+weekly_spatial_metrics[, "cor_lengths"] <- cor_lengths
+
+# Fill the data frame with list_Cr values
+for (i in seq_along(list_Cr)) {
+  weekly_spatial_metrics[i, 5:52] <- unlist(list_Cr[[i]])
+}
+
+# add next week marginal cases column
+weekly_spatial_metrics <- weekly_spatial_metrics %>%
+  mutate(next_week_marginal_cases = dplyr::lead(marginal_cases))
+weekly_spatial_metrics$next_week_marginal_cases[159:160] = c(NA, NA)
+
+# add wave column
+weekly_spatial_metrics$wave[as.Date(weekly_spatial_metrics$week_start_date) >= "2021-12-11"] = 3
+weekly_spatial_metrics$wave[as.Date(weekly_spatial_metrics$week_start_date) < "2021-12-11"] = 2
+weekly_spatial_metrics$wave[as.Date(weekly_spatial_metrics$week_start_date) < "2020-12-26"] = 1
+
+# add wave dummies
+weekly_spatial_metrics$wave_1[weekly_spatial_metrics$wave == 1] = 1
+weekly_spatial_metrics$wave_1[weekly_spatial_metrics$wave != 1] = 0
+weekly_spatial_metrics$wave_2[weekly_spatial_metrics$wave == 2] = 1
+weekly_spatial_metrics$wave_2[weekly_spatial_metrics$wave != 2] = 0
+
+head(weekly_spatial_metrics)
+
+# save to cs
+# write.csv(weekly_spatial_metrics, "weekly_spatial_metrics_waves.csv")
+```
+
+```{r}
+# initialize data frame
+regional_weekly_spatial_metrics <- data.frame(matrix(NA, nrow = 0, ncol = 54))
+colnames(regional_weekly_spatial_metrics)[1:4] <- c("week_start_date", "total_cases", "marginal_cases", "cor_lengths")
+colnames(regional_weekly_spatial_metrics)[5:52] <- as.character(col_names)
+colnames(regional_weekly_spatial_metrics)[53:54] <- c("next_week_marginal_cases","region")
+
+# Weekly Spatial Metrics for Regions
+for (r in 1:4) {
+  list_Cr = Cr_regions[[r]]
+  cor_lengths = cor_lengths_regions[[r]]
+  regions = c("Northeast","Midwest","South","West")
+  
+  # Create dataframe
+  weekly_spatial_metrics <- data.frame(matrix(NA, nrow = length(list_Cr), ncol = 52))
+  colnames(weekly_spatial_metrics)[1:4] <- c("week_start_date", "total_cases", "marginal_cases", "cor_lengths")
+  colnames(weekly_spatial_metrics)[5:52] <- as.character(col_names)
+  
+  # Fill in first few columns
+  weekly_spatial_metrics[, "week_start_date"] <- date_names
+  weekly_spatial_metrics[, "total_cases"] <- total_cases
+  weekly_spatial_metrics[, "marginal_cases"] <- c(0, diff(weekly_spatial_metrics$total_cases))
+  weekly_spatial_metrics[, "cor_lengths"] <- cor_lengths
+  
+  # Fill the data frame with list_Cr values
+  for (i in seq_along(list_Cr)) {
+    weekly_spatial_metrics[i, 5:52] <- unlist(list_Cr[[i]])
+  }
+  
+  # add next week marginal cases column
+  weekly_spatial_metrics <- weekly_spatial_metrics %>%
+    mutate(next_week_marginal_cases = dplyr::lead(marginal_cases))
+  weekly_spatial_metrics$next_week_marginal_cases[159:160] = c(NA, NA)
+  weekly_spatial_metrics$region = rep(regions[r], 160)
+  regional_weekly_spatial_metrics = rbind(regional_weekly_spatial_metrics, weekly_spatial_metrics)
+}
+
+# add wave dummies
+regional_weekly_spatial_metrics$northeast[regional_weekly_spatial_metrics$region == "Northeast"] = 1
+regional_weekly_spatial_metrics$northeast[weekly_spatial_metrics$region != "Northeast"] = 0
+regional_weekly_spatial_metrics$midwest[regional_weekly_spatial_metrics$region == "Midwest"] = 1
+regional_weekly_spatial_metrics$midwest[regional_weekly_spatial_metrics$region != "Midwest"] = 0
+regional_weekly_spatial_metrics$south[regional_weekly_spatial_metrics$region == "South"] = 1
+regional_weekly_spatial_metrics$south[regional_weekly_spatial_metrics$region != "South"] = 0
+
+# save to cs
+write.csv(regional_weekly_spatial_metrics, "regional_weekly_spatial_metrics.csv")
+```
+
+Output: weekly_spatial_metrics
+  - Weekly data set with corresponding covid cases, spatial correlations, and correlation lengths
+  - 148 rows (# weeks in subset) x 52 columns (date, cases, distance intervals)
+  - features: start date of week, total cases, marginal cases, next week's marginal cases, distance intervals from [0,50] to [970,1000], correlation length 
+
+
+
+```{r}
+# turn this into a panel data set
+
+# Gather the columns into key-value pairs
+df_long <- gather(weekly_spatial_metrics, key = "r", value = "value", -week_start_date, -total_cases, -marginal_cases, -cor_lengths_2, -next_week_marginal_cases)
+
+# If you want to extract the numerical range from the column names
+df_long$r <- sub("r_", "", df_long$r)
+df_long$r <- as.numeric(sub("_.*", "", df_long$r))
+
+# If you want to order the data by week_start_date and r
+df_long <- df_long[order(df_long$week_start_date, df_long$r), ]
+
+# Reset row names if needed
+rownames(df_long) <- NULL
+
+# Print the resulting panel data set
+tail(df_long)
+nrow(df_long)/nrow(weekly_spatial_metrics)
+
+
+# add week column
+temp <- df_long %>%
+  arrange(week_start_date)
+date_vector <- unique(temp$week_start_date)
+week_vector <- c(6:165)
+for (i in seq_along(date_vector)) {
+  df_long$week[df_long$week_start_date == date_vector[i]] <- week_vector[i]
+}
+# save to csv
+# write.csv(df_long, "panel_week_r_spatial_metrics.csv")
+```
+
+# Some Spatial Metrics EDA
+
+## Spatial Correlation C(r) Plots for all weeks
+
+```{r}
+# Split list into 10 subsets
+week_subset = list_Cr[6:155]
+
+list_of_subsets <- split(week_subset, rep(1:15, each = 10))
+
+# Create a list to store matrix_Cr for each subset
+list_of_matrix_Cr <- list()
+
+# Iterate over each subset
+for (i in seq_along(list_of_subsets)) {
+  subset_list <- list_of_subsets[[i]]
+  
+  # Convert each subset into a matrix
+  matrix_Cr <- sapply(subset_list, unlist)
+  
+  # Store the matrix in the list
+  list_of_matrix_Cr[[i]] <- matrix_Cr
+}
+
+# Create 12 plots
+par(mfrow = c(2, 3))  # Adjust the layout according to your preference
+par(mfrow = c(2, 3))
+
+for (i in seq_along(list_of_matrix_Cr)) {
+  # Plot using matplot
+  matplot(r_lower, list_of_matrix_Cr[[i]], type = "l", col = 1:15, lty = 1:15,
+          xlab = "r (km)", ylab = "C(r)", main = paste("Weeks", (i - 1) * 10+11, "-", i * 10+10), col.axis = "blue")
+}
+```
+
+## Correlation Length Analysis
+
+```{r}
+# Correlation between local correlations C(r<50) and correlation length xi
+cor(weekly_spatial_metrics$r_0_50, weekly_spatial_metrics$cor_lengths_2, use = "complete.obs")
+
+# Scatter Plot
+plot(weekly_spatial_metrics$cor_lengths_2, weekly_spatial_metrics$r_0_50,  pch = 16, ylab = "Local Correlation C(r<50)", xlab = "Correlation Length xi")
+```
+
+```{r}
+# Correlation between Marginal cases and Correlation Length
+
+for (i in 1:4) { # looking at effects in the 4 following weeks 
+  print(cor(log(weekly_spatial_metrics$cor_lengths_2[-seq_len(i)]), log(weekly_spatial_metrics$marginal_cases[-seq_len(i)]), use = "complete.obs"))
+} # decreases from .44 correlation
+
+cor(log(weekly_spatial_metrics$cor_lengths_2), log(weekly_spatial_metrics$next_week_marginal_cases), use = "complete.obs")
+
+#Linear-Linear Scatter Plot
+plot( weekly_spatial_metrics$cor_lengths_2, weekly_spatial_metrics$next_week_marginal_cases,pch = 16, ylab = "Marginal Case Increase", xlab = "Correlation Length (km)", main="Linear-Linear")
+
+# Linear-Log Scatter Plot
+plot(weekly_spatial_metrics$cor_lengths_2, log(weekly_spatial_metrics$next_week_marginal_cases),pch = 16, ylab = "Log(Marginal Case Increase)", xlab = "Correlation Length (km)", main="Log-Linear")
+
+# Log-Log Scatter Plot
+plot( log(weekly_spatial_metrics$cor_lengths_2), log(weekly_spatial_metrics$next_week_marginal_cases),pch = 16, ylab = "Log(Marginal Case Increase)", xlab = "Log(Correlation Length)", main="Log-Log")
+```
+
+```{r}
+# Regress next week's marginal cases on correlation length
+lm_model <- lm(log(weekly_spatial_metrics$next_week_marginal_cases) ~ log(weekly_spatial_metrics$cor_lengths_2), data = weekly_spatial_metrics)
+summary(lm_model)
+
+# a 10% increase in correlation length (km) corresponds to a 9.402% change in cases in the following week
+# there is heteroskedasticity
+
+# Calculate robust standard errors
+robust_se <- sqrt(diag(vcovHC(lm_model, type = "HC1")))
+
+# Perform hypothesis tests with robust standard errors
+robust_test <- coeftest(lm_model, vcov = vcovHC(lm_model, type = "HC1")) # still significant
+```
+
+```{r}
+# TRUE DATA
+N = length(log(weekly_spatial_metrics$cor_lengths_2))-1
+p = 1
+X = cbind(rep(1,N), log(weekly_spatial_metrics$cor_lengths_2)[1:N])
+Y = log(weekly_spatial_metrics$next_week_marginal_cases)[1:N]
+# Remove rows with NAs
+complete_rows <- complete.cases(X, Y)
+X <- X[complete_rows, ]
+Y <- Y[complete_rows]
+indices_complete_cases <- which(complete_rows)
+
+# Initial data points for first beta
+n=5
+
+# Initialize beta using the first n observations
+X_n <- X[1:n, , drop = FALSE]
+Y_n <- Y[1:n]
+beta_n <- solve(t(X_n) %*% X_n) %*% t(X_n) %*% Y_n
+betas = data.frame(beta_n[1], beta_n[2])
+# Sequentially update using the algorithm
+for (i in (n + 1):length(Y)) {
+  # Add an additional observation
+  X_n <- rbind(X_n, c(1,X[i,2]))
+  Y_n <- c(Y_n, Y[i])
+  beta_n <- solve(t(X_n) %*% X_n) %*% t(X_n) %*% Y_n
+  betas= rbind(betas, c(beta_n[1,], beta_n[2,]))
+}
+
+# Print the final estimated coefficients
+cat("Final Estimated Coefficients:", beta_n, "\n")
+nrow(beta_df)
+# Create beta data frame
+names(betas) = c("intercept","slope")
+beta_df <- data.frame(intercept = rep(NA,N), slope = rep(NA, N))
+beta_df[indices_complete_cases[5:length(indices_complete_cases)],] <- round(betas,3)
+beta_df[5:(nrow(beta_df)-1),] <- fill(beta_df[5:(nrow(beta_df)-1),], .direction = "down")
+na_rows <- data.frame(intercept = rep(NA, 5),slope = rep(NA, 5))
+full_betas <- rbind(na_rows, beta_df,beta_df[(nrow(beta_df)-1),])
+# fill in missing values
+full_betas[61:63,]=full_betas[60,]
+full_betas[91:93,]=full_betas[90,]
+full_betas[121,]=full_betas[120,]
+full_betas[130,]=full_betas[129,]
+full_betas$week = c(1:165)
+full_betas = full_betas[1:163,]
+#write to csv
+# write.csv(full_betas, "log_log_model_coefs.csv")
+```
+
+### Aarushi's Section (more data cleaning + Poverty_Covid EDA)
+
+```{r}
+
+# Group by week and then summarize the other columns for entire covid data
+weekly_summary <- covid_daily_avg %>%
+  group_by(week) %>%
+  summarize(
+    total_cases = sum(total_cases),
+    total_deaths = sum(total_deaths, na.rm = TRUE),
+    avg_daily_cases = sum(avg_daily_cases),
+    avg_daily_deaths = sum(avg_daily_deaths)
+  )
+
+# View the summarized data
+print(weekly_summary)
+
+# Plotting total cases for each week
+ggplot(weekly_summary, aes(x = week)) +
+  geom_line(aes(y = total_cases, color = "Total Cases")) +
+  #geom_line(aes(y = total_deaths, color = "Total Deaths")) +
+  labs(y = "Count", title = "Total Cases per Week ") +
+  scale_color_manual(values = c("Total Cases" = "blue", "Total Deaths" = "red")) +
+  theme_minimal()
+
+# Plotting total deaths for each week
+ggplot(weekly_summary, aes(x = week)) +
+  geom_line(aes(y = total_deaths, color = "Total Deaths")) +
+  labs(y = "Count", title = "Total Deaths per Week") +
+  scale_color_manual(values = c("Total Deaths" = "red")) +
+  theme_minimal()
+```
+
+```{r}
+# taking new cases and deaths per week by taking row-wise differences
+weekly_summary1 <- weekly_summary %>%
+  mutate(
+    new_cases = c(41, diff(total_cases)),
+    new_deaths = c(0, diff(total_deaths)),
+    new_avg_daily_cases = c(5.857143e+00, diff(avg_daily_cases)),
+    new_avg_daily_deaths = c(0, diff(avg_daily_deaths))
+  ) %>%
+  select(week, new_cases, new_deaths, new_avg_daily_cases, new_avg_daily_deaths)
+
+# View the updated dataframe with new columns
+print(weekly_summary1)
+
+# Plotting new cases for each week
+ggplot(weekly_summary1, aes(x = week)) +
+  geom_line(aes(y = new_cases, color = "New Cases")) +
+  geom_vline(xintercept = 47, color = "red", linetype = "dotted") +  # Red dotted line at week 47
+  geom_vline(xintercept = 97, color = "red", linetype = "dotted") +  # Red dotted line at week 97
+  labs(y = "Count", title = "Weekly New Cases") +
+  scale_color_manual(values = c("New Cases" = "blue")) +
+  theme_minimal()
+
+# Plotting new deaths for each week
+ggplot(weekly_summary1, aes(x = week)) +
+  geom_line(aes(y = new_deaths, color = "New Deaths")) +
+  geom_vline(xintercept = 47, color = "red", linetype = "dotted") +  # Red dotted line at week 47
+  geom_vline(xintercept = 97, color = "red", linetype = "dotted") +  # Red dotted line at week 97
+  labs(y = "Count", title = "Weekly New Deaths") +
+  scale_color_manual(values = c("New Deaths" = "red")) +
+  theme_minimal()
+
+```
+
+
+```{r}
+# Group by week and then summarize the other columns for covid data per capital
+weekly_summary_perpop <- county_week %>%
+  group_by(week) %>%
+  summarize(
+    total_cases = sum(total_cases),
+    total_deaths = sum(total_deaths),
+    avg_daily_cases = sum(avg_daily_cases),
+    avg_daily_deaths = sum(avg_daily_deaths), 
+    avg_daily_cases_perpop = sum(fract_avg_daily_cases), 
+    avg_daily_deaths_perpop = sum(fract_avg_daily_deaths, na.rm = TRUE)
+  )
+
+# View the summarized data
+print(weekly_summary_perpop)
+
+# Plotting total cases for each week
+ggplot(weekly_summary_perpop, aes(x = week)) +
+  geom_line(aes(y = avg_daily_cases_perpop, color = "Total Cases")) +
+  labs(y = "Count", title = "Total Cases per capita per Week") +
+  scale_color_manual(values = c("Total Cases" = "blue")) +
+  theme_minimal()
+
+library(ggplot2)
+
+# Plotting total deaths for each week
+ggplot(weekly_summary_perpop, aes(x = week)) +
+  geom_line(aes(y = avg_daily_deaths_perpop, color = "Total Deaths")) +
+  labs(y = "Count", title = "Total Deaths per capita per Week") +
+  scale_color_manual(values = c("Total Deaths" = "red")) +
+  theme_minimal()
+```
+
+```{r}
+# taking new cases and deaths per week per capita by taking row-wise differences
+weekly_summary_perpop1 <- weekly_summary_perpop %>%
+  mutate(
+    new_avg_daily_cases_perpop = c(2.447198e-06, diff(avg_daily_cases_perpop)),
+    new_avg_daily_deaths_perpop = c(0, diff(avg_daily_deaths_perpop))
+  ) %>%
+  select(week, new_avg_daily_cases_perpop, new_avg_daily_deaths_perpop)
+
+# View the updated dataframe with new columns
+print(weekly_summary_perpop1)
+
+# Plotting new cases for each week
+ggplot(weekly_summary_perpop1, aes(x = week)) +
+  geom_line(aes(y = new_avg_daily_cases_perpop, color = "New Cases")) +
+  geom_vline(xintercept = 47, color = "red", linetype = "dotted") +  # Red dotted line at week 47
+  geom_vline(xintercept = 97, color = "red", linetype = "dotted") +  # Red dotted line at week 97
+  labs(y = "Count", title = "Weekly New Cases per Capita") +
+  scale_color_manual(values = c("New Cases" = "blue")) +
+  theme_minimal()
+
+# Plotting new deaths for each week
+ggplot(weekly_summary_perpop1, aes(x = week)) +
+  geom_line(aes(y = new_avg_daily_deaths_perpop, color = "New Deaths")) +
+  geom_vline(xintercept = 47, color = "red", linetype = "dotted") +  # Red dotted line at week 47
+  geom_vline(xintercept = 97, color = "red", linetype = "dotted") +  # Red dotted line at week 97
+  labs(y = "Count", title = "Weekly New Deaths per Capita") +
+  scale_color_manual(values = c("New Deaths" = "red")) +
+  theme_minimal()
+```
+
+### Clean Poverty Data (from USDA) 2021
+
+```{r}
+poverty_raw <- read_xlsx("PovertyEstimates.xlsx")
+poverty <- poverty_raw[-(1:3), ]
+
+# Set the column names of to be the values of the first row
+colnames(poverty) <- as.character(unlist(poverty[1, ]))
+poverty <- poverty[-1, ]
+# remove first row of data since it's for entirety of USA
+poverty <-poverty[-1, ]
+
+# extract unemployment rates 
+poverty <- poverty[, c("FIPS_Code", "PCTPOVALL_2021", "MEDHHINC_2021")]
+poverty[, 2:3] <- lapply(poverty[, 2:3], as.numeric)
+
+head(poverty)
+nrow(poverty)
+```
+
+### Poverty EDA
+
+```{r}
+# Create a copy of the poverty dataframe
+pov <- poverty
+
+# Convert necessary columns to numeric if not already 
+pov$PCTPOVALL_2021 <- as.numeric(as.character(pov$PCTPOVALL_2021))
+pov$MEDHHINC_2021 <- as.numeric(as.character(pov$MEDHHINC_2021))
+
+# Summary statistics for PCTPOVALL_2021 and MEDHHINC_2021
+summary_pov_povall <- summary(pov$PCTPOVALL_2021)
+summary_pov_medhhinc <- summary(pov$MEDHHINC_2021)
+
+# Print summary statistics
+print(summary_pov_povall)
+print(summary_pov_medhhinc)
+
+# Function to categorize into tiers based on PCTPOVALL_2021
+get_tier_povall <- function(x) {
+  quantiles <- quantile(x, probs = c(1/3, 2/3), na.rm = TRUE)
+  tier <- ifelse(x <= quantiles[1], 1, ifelse(x <= quantiles[2], 2, 3))
+  return(tier)
+}
+
+# Apply the tier function to PCTPOVALL_2021
+pov$Tier_Poverty <- get_tier_povall(pov$PCTPOVALL_2021)
+
+# View the first few rows to check the new column
+head(pov)
+```
+
+```{r}
+# Create summary table with NA values ignored
+tier_summary <- pov %>%
+  filter(!is.na(Tier_Poverty)) %>% # Ignore rows where Tier_Poverty is NA
+  group_by(Tier_Poverty) %>%
+  summarise(
+    Count = n(), # Sum of counties in that tier
+    Mean_Poverty_Rate = mean(PCTPOVALL_2021, na.rm = TRUE), # Mean poverty rate, ignoring NA
+    Median_Poverty_Rate = median(PCTPOVALL_2021, na.rm = TRUE), # Median poverty rate, ignoring NA
+    Min_Poverty_Rate = min(PCTPOVALL_2021, na.rm = TRUE), # Minimum poverty rate, ignoring NA
+    Max_Poverty_Rate = max(PCTPOVALL_2021, na.rm = TRUE) # Maximum poverty rate, ignoring NA
+  )
+
+# Print the summary table
+print(tier_summary)
+
+# save poverty tiers data to excel
+wb <- createWorkbook()
+
+# Add two sheets to the workbook
+addWorksheet(wb, "PovertyTiers")
+addWorksheet(wb, "PovertyTiersSummary")
+
+# Write data frames to separate sheets
+writeData(wb, sheet = "PovertyTiers", pov)
+writeData(wb, sheet = "PovertyTiersSummary", tier_summary)
+
+saveWorkbook(wb, "Poverty_Tiers.xlsx", overwrite = TRUE)
+```
+
+```{r}
+county_week <- county_week %>%
+  mutate(
+    year = case_when(
+      week <= 48 ~ "2020",
+      week > 48 & week <= 101 ~ "2021",
+      TRUE ~ "2022"
+    )
+  )
+
+cumulative_cases_at_week_48 <- county_week %>%
+  filter(week == 48) %>%
+  select(fips, total_cases_at_week_48 = total_cases)
+
+cumulative_cases_at_week_101 <- county_week %>%
+  filter(week == 101) %>%
+  select(fips, total_cases_at_week_101 = total_cases)
+
+# Join the cumulative cases information for weeks 48 and 101 to the main dataset
+covid_yearly_prepared <- county_week %>%
+  left_join(cumulative_cases_at_week_48, by = "fips") %>%
+  left_join(cumulative_cases_at_week_101, by = "fips")
+
+# Calculate annual cases per capita after adjusting for cumulative totals
+covid_yearly_final <- covid_yearly_prepared %>%
+  group_by(fips, year) %>%
+  summarize(
+    last_week_cases = total_cases[which.max(week)],
+    avg_pop_last_week = avg_pop[which.max(week)],
+    total_cases_at_week_48 = first(total_cases_at_week_48),  # Removed na.rm = TRUE
+    total_cases_at_week_101 = first(total_cases_at_week_101),  # Removed na.rm = TRUE
+    .groups = 'drop'
+  ) %>%
+  mutate(
+  adjusted_total_cases = ifelse(
+    year == "2020", 
+    last_week_cases,
+    ifelse(
+      year == "2021", 
+      last_week_cases - coalesce(total_cases_at_week_48, 0),
+      ifelse(
+        year == "2022", 
+        last_week_cases - coalesce(total_cases_at_week_101, 0),
+        NA_real_ # This is the 'else' condition if none of the above conditions are TRUE
+      )
+    )
+  ),
+  annual_cases_per_capita = adjusted_total_cases / avg_pop_last_week
+) %>%
+select(-last_week_cases, -adjusted_total_cases)
+
+# Join with poverty data
+covid_yearly_final <- covid_yearly_final %>%
+  left_join(poverty %>% select(FIPS_Code, PCTPOVALL_2021, MEDHHINC_2021), by = c("fips" = "FIPS_Code")) %>%
+  mutate(
+    avg_pov_rate = PCTPOVALL_2021,
+    Median_Household_Income_2021 = MEDHHINC_2021
+  ) %>%
+  select(year, fips, annual_cases_per_capita, avg_pov_rate, Median_Household_Income_2021)
+
+# View the resulting dataset
+head(covid_yearly_final)
+nrow(covid_yearly_final)
+```
+
+### Identifying counties with missing data
+
+```{r}
+# counties with no poverty data or missing Median Household Income data
+fips_no_pov_data <- covid_yearly_final %>%
+  filter(is.na(avg_pov_rate) | is.na(Median_Household_Income_2021)) %>%
+  pull(fips) %>%
+  unique()
+print(fips_no_pov_data)
+
+print(sapply(covid_yearly_final, function(x) sum(is.na(x))))
+```
+
+# Poverty Rate Analysis for All Years
+
+```{r}
+covid_fract_daily_avg_pov_filtered1 <- covid_yearly_final %>%
+  filter(!is.na(avg_pov_rate))
+
+# Visualize the relationship with a regression line for all data
+p <- ggplot(covid_fract_daily_avg_pov_filtered1, aes(x = avg_pov_rate, y = annual_cases_per_capita, color = year)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "black") +  # Add regression line
+  theme_minimal() +
+  labs(title = "Annual Cases per Capita by Poverty Rate for each County",
+       x = "Average Poverty Rate (%)",
+       y = "Annual Cases per Capita",
+       caption = "Data source: [Johns Hopkins, USDA]",
+       color = "Year") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+print(p)
+
+# Fit a linear model for all data to calculate the slope
+model <- lm(annual_cases_per_capita ~ avg_pov_rate, data = covid_fract_daily_avg_pov_filtered1)
+
+# Print the slope of the regression line
+slope <- coef(model)["avg_pov_rate"]
+print(paste("Slope of the regression line:", slope))
+```
+
+# Median Household Income Analysis for All Years
+
+```{r}
+covid_fract_daily_avg_pov_filtered2 <- covid_yearly_final %>%
+  filter(!is.na(Median_Household_Income_2021))
+
+# Visualize the relationship with a regression line for all data
+p <- ggplot(covid_fract_daily_avg_pov_filtered2, aes(x = Median_Household_Income_2021, y = annual_cases_per_capita, color = year)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "black") +  # Add regression line
+  theme_minimal() +
+  labs(title = "Annual Cases per Capita by Median Household Income for each County",
+       x = "Median Household Income ($)",
+       y = "Annual Cases per Capita",
+       caption = "Data source: [Johns Hopkins, USDA]",
+       color = "Year") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+print(p)
+
+# Fit a linear model for all data to calculate the slope
+model <- lm(annual_cases_per_capita ~ Median_Household_Income_2021, data = covid_fract_daily_avg_pov_filtered2)
+
+# Print the slope of the regression line
+slope <- coef(model)["Median_Household_Income_2021"]
+print(paste("Slope of the regression line:", slope))
+```
+
+### Clean Unemployment Data (from USDA) 2020 - 2022 
+
+```{r}
+unemployment_raw <- read_xlsx("Unemployment.xlsx")
+unemployment <- unemployment_raw[-(1:3), ]
+
+# Set the column names of to be the values of the first row
+colnames(unemployment) <- as.character(unlist(unemployment[1, ]))
+unemployment <- unemployment[-1, ]
+# remove first row of data since it's for entirety of USA
+unemployment <-unemployment[-1, ]
+
+# extract unemployment rates 
+unemployment <- unemployment[, c("FIPS_Code", "Unemployment_rate_2020", 
+                                 "Unemployment_rate_2021", "Unemployment_rate_2022",
+                                 "Median_Household_Income_2021", 
+                                 "Med_HH_Income_Percent_of_State_Total_2021")]
+unemployment[, 2:6] <- lapply(unemployment[, 2:6], as.numeric)
+
+# add average unemployment rate 2020 - 2022 as we define socioeconomic factors as fixed 
+unemployment$avg_unemploy_rate <- rowMeans(unemployment[, 2:4], na.rm = TRUE)
+
+head(unemployment)
+```
+### Unemployment EDA
+
+```{r}
+# Create a copy of the unemployment dataframe 
+unemploy <- unemployment 
+
+# Convert necessary columns to numeric if not already 
+# unemploy$avg_unemploy_rate <- as.numeric(as.character(unemploy$avg_unemploy_rate))
+# unemploy$Median_Household_Income_2021 <- as.numeric(as.character(unemploy$Median_Household_Income_2021))
+
+# Summary statistics for unemployment rate and median household income 
+summary_unemploy_rate <- summary(unemploy$avg_unemploy_rate)
+summary_medhhinc <- summary(unemploy$Median_Household_Income_2021)
+
+# Print summary statistics
+print(summary_unemploy_rate)
+print(summary_medhhinc)
+
+# Function to categorize into tiers based on PCTPOVALL_2021
+# get_tier_povall <- function(x) {
+#  quantiles <- quantile(x, probs = c(1/3, 2/3), na.rm = TRUE)
+#  tier <- ifelse(x <= quantiles[1], 1, ifelse(x <= quantiles[2], 2, 3))
+#  return(tier)
+#}
+
+# Apply the tier function to unemployment rate and median household income 
+unemploy$Tier_Unemploy <- get_tier_povall(unemploy$avg_unemploy_rate)
+unemploy$Tier_MedHHInc <- get_tier_povall(unemploy$Median_Household_Income_2021)
+# View the first few rows to check the new column
+head(unemploy)
+
+# hist(unemploy$avg_unemploy_rate)
+```
+
+```{r}
+# Create summary table with NA values ignored
+tier_summary_unemploy <- unemploy %>%
+  filter(!is.na(Tier_Unemploy)) %>% # Ignore rows where Tier_Poverty is NA
+  group_by(Tier_Unemploy) %>%
+  summarise(
+    Count = n(), # Sum of counties in that tier
+    Mean_Unemployment_Rate = mean(avg_unemploy_rate, na.rm = TRUE), # Mean poverty rate, ignoring NA
+    Median_Unemployment_Rate = median(avg_unemploy_rate, na.rm = TRUE), # Median poverty rate, ignoring NA
+    Min_Unemployment_Rate = min(avg_unemploy_rate, na.rm = TRUE), # Minimum poverty rate, ignoring NA
+    Max_Unemployment_Rate = max(avg_unemploy_rate, na.rm = TRUE) # Maximum poverty rate, ignoring NA
+  )
+
+# Print the summary table
+print(tier_summary_unemploy)
+
+# save poverty tiers data to excel
+wb <- createWorkbook()
+
+# Add two sheets to the workbook
+addWorksheet(wb, "UnemployTier")
+addWorksheet(wb, "UnemployTierSumm")
+
+# Write data frames to separate sheets
+writeData(wb, sheet = "UnemployTier", unemploy)
+writeData(wb, sheet = "UnemployTierSumm", tier_summary_unemploy)
+
+saveWorkbook(wb, "Unemply_Tiers.xlsx", overwrite = TRUE)
+```
+
+```{r}
+# Create summary table with NA values ignored
+tier_summary_MedHHInc <- unemploy %>%
+  filter(!is.na(Tier_MedHHInc)) %>% # Ignore rows where Tier_Poverty is NA
+  group_by(Tier_MedHHInc) %>%
+  summarise(
+    Count = n(), # Sum of counties in that tier
+    Mean_MedHHInc = mean(Median_Household_Income_2021, na.rm = TRUE), 
+    Median_MedHHInc = median(Median_Household_Income_2021, na.rm = TRUE), 
+    Min_MedHHInc = min(Median_Household_Income_2021, na.rm = TRUE), 
+    Max_MedHHInc = max(Median_Household_Income_2021, na.rm = TRUE)
+  )
+
+# Print the summary table
+print(tier_summary_MedHHInc)
+```
+
+```{r}
+# Join with unemployment data 
+covid_yearly_final_unemployment <- covid_yearly_final %>%
+  left_join(unemployment, by = c("fips" = "FIPS_Code")) %>%
+    select(-"Unemployment_rate_2020", -"Unemployment_rate_2021",
+           -"Unemployment_rate_2022", -"Median_Household_Income_2021.x")
+```
+
+
+```{r}
+# counties with no unemployment data 
+fips_no_unemploy_data <- covid_yearly_final_unemployment %>%
+  filter(is.na(avg_unemploy_rate) | is.na(Median_Household_Income_2021.y) |     
+           is.na(Med_HH_Income_Percent_of_State_Total_2021)) %>%
+  pull(fips) %>%
+  unique()
+print(fips_no_unemploy_data)
+```
+
+```{r}
+# unemployment rate 
+
+# filter out counties with no unemployment rate data 
+covid_fract_daily_avg_unemploy_rate_filtered <- covid_yearly_final_unemployment %>%
+  filter(!is.na(avg_unemploy_rate))
+
+ggplot(covid_fract_daily_avg_unemploy_rate_filtered, 
+       aes(x = avg_unemploy_rate, y = annual_cases_per_capita, color = year)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "black") +  # Add regression line
+  theme_minimal() +
+  labs(title = "Annual Cases per Capita by Unemployment Rate for each County",
+       x = "Unemployment Rate (%)",
+       y = "Annual Cases per Capita",
+       caption = "Data source: [Johns Hopkins, USDA]",
+       color = "Year") +  # Label for the color legend
+  theme(plot.title = element_text(hjust = 0.5)) # Centers the plot title
+
+# Fit a linear model for all data to calculate the slope
+model <- lm(annual_cases_per_capita ~ avg_unemploy_rate, data = covid_fract_daily_avg_unemploy_rate_filtered)
+
+# Print the slope of the regression line
+slope <- coef(model)["avg_unemploy_rate"]
+print(paste("Slope of the regression line:", slope))
+```
+
+```{r}
+# Med_HH_Income_Percent_of_State_Total_2021
+
+# filter out counties with no Med_HH_Income_Percent_of_State_Total_2021 data 
+covid_fract_daily_avg_income_percent_filtered <- covid_yearly_final_unemployment %>%
+  filter(!is.na(Med_HH_Income_Percent_of_State_Total_2021))
+
+ggplot(covid_fract_daily_avg_income_percent_filtered,
+       aes(x = Med_HH_Income_Percent_of_State_Total_2021, y = annual_cases_per_capita, color = year)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "black") +  # Add regression line
+  theme_minimal() +
+  labs(title = "Annual Cases per Capita by Relative Househould Income for each County",
+       x = "Median Household Income as a Percentage of State Total",
+       y = "Annual Cases per Capita",
+       caption = "Data source: [Johns Hopkins, USDA]",
+       color = "Year") +
+  theme(plot.title = element_text(hjust = 0.5)) # Centers the plot title
+
+# Fit a linear model for all data to calculate the slope
+model <- lm(annual_cases_per_capita ~ Med_HH_Income_Percent_of_State_Total_2021, data = covid_fract_daily_avg_unemploy_rate_filtered)
+
+# Print the slope of the regression line
+slope <- coef(model)["Med_HH_Income_Percent_of_State_Total_2021"]
+print(paste("Slope of the regression line:", slope))
+```
+
+### Clean Education Data (from USDA) 2017-2021
+
+```{r}
+education_raw <- read_xlsx("Education.xlsx")
+education <- education_raw[-(1:2), ]
+
+# Set the column names of to be the values of the first row
+colnames(education) <- as.character(unlist(education[1, ]))
+education <- education[-1, ]
+# remove first row of data since it's for entirety of USA
+education <- education[-1, ]
+education <- education[, c("Federal Information Processing Standard (FIPS) Code", "Percent of adults with less than a high school diploma, 2017-21","Percent of adults with a high school diploma only, 2017-21", "Percent of adults with a bachelor's degree or higher, 2017-21")]
+#education
+colnames(education) <- c("fips", "no_degree_rate", "high_school_diploma_rate", "bachelors_or_higher_rate")
+
+class(education$no_degree_rate) <- "numeric"
+class(education$high_school_diploma_rate) <- "numeric"
+class(education$bachelors_or_higher_rate) <- "numeric"
+
+head(education)
+#nrow(education)
+```
+
+### Education EDA
+
+```{r}
+# Create a copy of the education dataframe
+ed <- education
+
+# Summary statistics for no_degree_rate and bachelors_or_higher_rate
+summary_ed_nodegree <- summary(ed$no_degree_rate)
+summary_ed_bachelors <- summary(ed$bachelors_or_higher_rate)
+
+# Print summary statistics
+print(summary_ed_nodegree)
+print(summary_ed_bachelors)
+
+# Apply the tier function 
+ed$tier_bachelors <- get_tier_povall(ed$bachelors_or_higher_rate)
+
+# View the first few rows to check the new column
+head(ed)
+```
+
+```{r}
+# Create summary table with NA values ignored
+tier_summary_bachelors <- ed %>%
+  filter(!is.na(tier_bachelors)) %>% 
+  group_by(tier_bachelors) %>%
+  summarise(
+    Count = n(), # Sum of counties in that tier
+    Mean_Bachelors_Rate = mean(bachelors_or_higher_rate, na.rm = TRUE), 
+    Median_Bachelors_Rate = median(bachelors_or_higher_rate, na.rm = TRUE), 
+    Min_Unemployment_Rate = min(bachelors_or_higher_rate, na.rm = TRUE), 
+    Max_Unemployment_Rate = max(bachelors_or_higher_rate, na.rm = TRUE) 
+  )
+
+# Print the summary table
+print(tier_summary_bachelors)
+
+# save poverty tiers data to excel
+wb <- createWorkbook()
+
+# Add two sheets to the workbook
+addWorksheet(wb, "BachelorsTier")
+addWorksheet(wb, "BachelorsTierSumm")
+
+# Write data frames to separate sheets
+writeData(wb, sheet = "BachelorsTier", ed)
+writeData(wb, sheet = "BachelorsTierSumm", tier_summary_bachelors)
+
+saveWorkbook(wb, "Education_Tiers.xlsx", overwrite = TRUE)
+```
+
+# Identifying counties with missing data
+
+```{r}
+# counties with no education date
+fips_no_ed_data <- covid_yearly_final_ed %>%
+  filter(is.na(bachelors_or_higher_rate) | is.na(no_degree_rate)) %>%
+  pull(fips) %>%
+  unique()
+print(fips_no_ed_data)
+
+print(sapply(covid_yearly_final_ed, function(x) sum(is.na(x))))
+```
+
+```{r}
+# join with education with rest of covid socioeconomic data
+covid_yearly_final_ed <- covid_fract_daily_avg_income_percent_filtered %>%
+  left_join(education %>% select(FIPS_code = `fips`, no_degree_rate = `no_degree_rate`,  bachelors_or_higher_rate = `bachelors_or_higher_rate`), by = c("fips" = "FIPS_code")) 
+
+# View the resulting dataset
+covid_yearly_final_ed
+
+# save all socioeconomic factors data into an excel sheet
+write.xlsx(covid_yearly_final_ed, "Processed_Socioeconomic.xlsx", rowNames = FALSE)
+```
+
+# Less than a HS Diploma Rate from 2017-21
+
+```{r}
+# Visualize the relationship between no_degree_rate and annual_cases_per_capita
+ggplot(covid_yearly_final_ed, aes(x = no_degree_rate, y = annual_cases_per_capita, color = year)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "black") +
+  theme_minimal() +
+  labs(title = "Annual Cases per Capita by Less than a HS Diploma Rate for each County",
+       x = "Less than a High School Diploma Rate (%)",
+       y = "Annual Cases per Capita",
+       caption = "Data source: [Johns Hopkins, USDA]",
+       color = "Year") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Fit a linear model for all data to calculate the slope
+model <- lm(annual_cases_per_capita ~ no_degree_rate, data = covid_yearly_final_ed)
+
+# Print the slope of the regression line
+slope <- coef(model)["no_degree_rate"]
+print(paste("Slope of the regression line:", slope))
+```
+
+# Bachelors Degree or Higher from 2017-21
+
+```{r}
+# Visualize the relationship between bachelors_or_higher_rate and annual_cases_per_capita
+ggplot(covid_yearly_final_ed, aes(x = bachelors_or_higher_rate, y = annual_cases_per_capita, color = year)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "black") +
+  theme_minimal() +
+  labs(title = "Annual Cases per Capita by Bachelors Degree or Higher Rates for each County",
+       x = "Bachelors Degree or Higher Rates (%)",
+       y = "Annual Cases per Capita",
+       caption = "Data source: [Johns Hopkins, USDA]",
+       color = "Year") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Fit a linear model for all data to calculate the slope
+model <- lm(annual_cases_per_capita ~ bachelors_or_higher_rate, data = covid_yearly_final_ed)
+
+# Print the slope of the regression line
+slope <- coef(model)["bachelors_or_higher_rate"]
+print(paste("Slope of the regression line:", slope))
+```
+
+# Is there a differece between those who had a Bacehlor's Degree in 2021 vs those who had less than a HS diploma?
+
+```{r}
+education_cases_2021 <- covid_yearly_final_ed %>%
+  filter(year == 2021)
+
+# Create the plot
+ggplot(education_cases_2021) +
+  geom_point(aes(x = no_degree_rate, y = annual_cases_per_capita, color = "No Degree Rate")) +
+  geom_point(aes(x = bachelors_or_higher_rate, y = annual_cases_per_capita, color = "Bachelors or Higher Rate")) +
+  labs(
+    title = "Annual COVID-19 Cases per Capita vs. Education Rates for 2021",
+    x = "Education Rate (%)",
+    y = "Annual Cases per Capita"
+  ) +
+  scale_color_manual(values = c("No Degree Rate" = "red", "Bachelors or Higher Rate" = "blue"),
+                     name = "Education Level",
+                     labels = c("No Degree Rate", "Bachelors or Higher Rate")) +
+  theme_minimal()
+```
