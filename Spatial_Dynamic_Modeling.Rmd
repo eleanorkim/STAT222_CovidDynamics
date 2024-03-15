@@ -241,3 +241,62 @@ print(robust_test)
 # Print Result
 paste("a 10% increase in correlation length corresponds to a ", round(west_model$coefficients[2]*10,2),"% change in cases in the following week")
 ```
+
+# Model based on time waves
+
+```{r}
+# Full Wave Model (w dummy variables)
+full_wave_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths) + wave_1 + wave_2, data = weekly_spatial_metrics_waves)
+
+robust_se <- sqrt(diag(vcovHC(full_wave_model, type = "HC1")))
+
+robust_test <- coeftest(full_wave_model, vcov = vcovHC(full_wave_model, type = "HC1"))
+print(robust_test)
+```
+
+```{r}
+# Wave 1 Simple Model (weeks 9-47)
+wave1_data <- weekly_spatial_metrics_waves %>% 
+  filter(X >= 9 & X <= 47)
+
+wave1_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), data = wave1_data)
+
+# Perform hypothesis tests with robust standard errors for heteroskedasticity
+robust_se <- sqrt(diag(vcovHC(wave1_model, type = "HC1")))
+
+robust_test <- coeftest(wave1_model, vcov = vcovHC(wave1_model, type = "HC1"))
+print(robust_test)
+
+paste("a 10% increase in correlation length corresponds to a ", round(wave1_model$coefficients[2]*10,2),"% change in cases in the following week")
+```
+
+```{r}
+# Wave 2 Simple Model (weeks 48-97)
+wave2_data <- weekly_spatial_metrics_waves %>% 
+  filter(X >= 48 & X <= 97)
+
+wave2_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), data = wave2_data)
+
+# Perform hypothesis tests with robust standard errors for heteroskedasticity
+robust_se <- sqrt(diag(vcovHC(wave2_model, type = "HC1")))
+
+robust_test <- coeftest(wave2_model, vcov = vcovHC(wave2_model, type = "HC1"))
+print(robust_test)
+
+paste("a 10% increase in correlation length corresponds to a ", round(wave2_model$coefficients[2]*10,2),"% change in cases in the following week")
+```
+
+```{r}
+# Wave 3 Simple model (weeks 98-160)
+wave3_data <- weekly_spatial_metrics_waves %>% filter(X >= 98 & X <= 160)  
+
+wave3_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), data = wave3_data)
+
+# Perform hypothesis tests with robust standard errors for heteroskedasticity
+robust_se <- sqrt(diag(vcovHC(wave3_model, type = "HC1")))
+
+robust_test <- coeftest(wave3_model, vcov = vcovHC(wave3_model, type = "HC1"))
+print(robust_test)
+
+paste("a 10% increase in correlation length corresponds to a ", round(wave3_model$coefficients[2]*10,2),"% change in cases in the following week")
+```
