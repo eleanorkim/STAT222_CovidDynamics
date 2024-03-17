@@ -145,7 +145,7 @@ r_upper = c(50, 50+20 *(1:46), 1000)
 r_lower = c(0,r_upper[1:47])
 
 # Add r_i indexes 1,2,....
-pairwise_counties$r_i <- cut(
+pairwise_counties$r_i <- cut(sq
   pairwise_counties$distance_km, 
   breaks = c(-Inf, r_upper, Inf), 
   labels = 1:(length(r_upper) + 1),  # Adjusted length for labels
@@ -155,6 +155,8 @@ pairwise_counties$r_i <- cut(
 # Add r col
 pairwise_counties$r <- round(r_upper[pairwise_counties$r_i],2)
 pairwise_counties$r_i = as.numeric(pairwise_counties$r_i)
+mean(unlist(all_cor_lengths), na.rm=TRUE)
+
 ```
 
 Output: pairwise_counties

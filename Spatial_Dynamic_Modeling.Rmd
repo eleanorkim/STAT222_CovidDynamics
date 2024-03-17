@@ -65,12 +65,20 @@ Output: mhhinc_weekly_spatial_metrics
   - 1570 rows (weeks 9 - 165 x 10 combinations of 4 tiers) x 71 columns (date, cases, cor length, C(r), poverty dummies)
   - features: start date of week, total cases, marginal cases, next week's marginal cases, C(r) for distance intervals from [0,50] to [970,1000], correlation length, income pair tiers  (4 choose 2) dummies, income tier differences (same tier, difference of 1, difference of 2, difference of 3)
 
+```{r}
+# Log-Linear Model (better)
+plot(weekly_spatial_metrics_waves$cor_lengths,log(weekly_spatial_metrics_waves$next_week_marginal_cases))
+
+# Log-Log Model (bad)
+plot(log(weekly_spatial_metrics_waves$cor_lengths),log(weekly_spatial_metrics_waves$next_week_marginal_cases))
+```
+
 
 # Model on entire data
 
 ```{r}
 # Regress next week's marginal cases on correlation length
-simple_model <- lm(log(weekly_spatial_metrics_waves$next_week_marginal_cases) ~ log(weekly_spatial_metrics_waves$cor_lengths), data = weekly_spatial_metrics_waves)
+simple_model <- lm(log(weekly_spatial_metrics_waves$next_week_marginal_cases) ~ weekly_spatial_metrics_waves$cor_lengths, data = weekly_spatial_metrics_waves)
 
 # Perform hypothesis tests with robust standard errors for heteroskedasticity
 robust_se <- sqrt(diag(vcovHC(simple_model, type = "HC1")))
@@ -79,22 +87,45 @@ robust_test <- coeftest(simple_model, vcov = vcovHC(simple_model, type = "HC1"))
 print(robust_test)
 
 # Print Result
-paste("a 10% increase in correlation length corresponds to a ", round(simple_model$coefficients[2]*10,2),"% change in cases in the following week")
+cor_length_unit = 100
+paste("a",cor_length_unit, "km increase in correlation length corresponds to a ", round(simple_model$coefficients[2]*cor_length_unit*100,2),"% change in cases in the following week")
+cor_length_unit = 50
+paste("a",cor_length_unit, "km increase in correlation length corresponds to a ", round(simple_model$coefficients[2]*cor_length_unit*100,2),"% change in cases in the following week")
 ```
-
 
 ```{r}
 # For Urban counties
-urban_model <- lm(log(urban_weekly_spatial_metrics_waves$next_week_marginal_cases) ~ log(urban_weekly_spatial_metrics_waves$cor_lengths), data = urban_weekly_spatial_metrics_waves)
+urban_model <- lm(log(urban_weekly_spatial_metrics_waves$next_week_marginal_cases) ~ urban_weekly_spatial_metrics_waves$cor_lengths, data = urban_weekly_spatial_metrics_waves)
 robust_se <- sqrt(diag(vcovHC(urban_model, type = "HC1")))
 robust_test <- coeftest(urban_model, vcov = vcovHC(urban_model, type = "HC1"))
 print(robust_test)
 
 # Print Result
-paste("a 10% increase in correlation length corresponds to a ", round(simple_model$coefficients[2]*10,2),"% change in cases in the following week among urban counties")
+cor_length_unit = 100
+paste("a",cor_length_unit, "km increase in correlation length corresponds to a ", round(urban_model$coefficients[2]*cor_length_unit*100,2),"% change in cases in the following week among urban counties")
+cor_length_unit = 50
+paste("a",cor_length_unit, "km increase in correlation length corresponds to a ", round(urban_model$coefficients[2]*cor_length_unit*100,2),"% change in cases in the following week among urban counties")
 ```
 
 # Model based on median household income
+
+```{r}
+# log-linear model
+# mhhinc tier difference dummies, urban counties
+urban_model <- lm(log(next_week_marginal_cases) ~ cor_lengths +
+                        same_tier + tier_diff_1 + tier_diff_2 +same_tier*cor_lengths +
+                          tier_diff_1*cor_lengths +tier_diff_2*cor_lengths, 
+                     data = urban_mhhinc_weekly_spatial_metrics)
+robust_se <- sqrt(diag(vcovHC(urban_model, type = "HC1")))
+robust_test <- coeftest(urban_model, vcov = vcovHC(urban_model, type = "HC1"))
+print(robust_test)
+
+cor_length_unit = 50
+paste("a",cor_length_unit, "km increase in correlation length corresponds to a ", round((urban_model$coef[2] + urban_model$coef[6])*cor_length_unit*100,2),"% change in cases in the following week among urban counties in the same tier of mhhinc")
+paste("a",cor_length_unit, "km increase in correlation length corresponds to a ", round((urban_model$coef[2] + urban_model$coef[7])*cor_length_unit*100,2),"% change in cases in the following week between urban counties of mhhinc tiers that differ by 1")
+paste("a",cor_length_unit, "km increase in correlation length corresponds to a ", round((urban_model$coef[2] + urban_model$coef[8])*cor_length_unit*100,2),"% change in cases in the following week between urban counties of mhhinc tiers that differ by 2")
+paste("a",cor_length_unit, "km increase in correlation length corresponds to a ", round(urban_model$coef[2]*cor_length_unit*100,2),"% change in cases in the following week between urban counties of tier 1 and tier 4 (diff 3)")
+```
 
 ```{r}
 # map factor levels to tier levels 
