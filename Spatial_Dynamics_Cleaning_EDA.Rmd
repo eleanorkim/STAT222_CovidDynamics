@@ -47,8 +47,8 @@ county_subset = filter(counties_pop, CENSUS_2020_POP >= 10000)
 nrow(county_subset) # 2229
 
 # For urban data only:
-county_subset = filter(counties_pop, CENSUS_2020_POP >= 250000)
-nrow(county_subset) # 2229
+#county_subset = filter(counties_pop, CENSUS_2020_POP >= 250000)
+
 
 # Rename cols
 names(county_subset) = c('fips','state','county','land_sqkm', 'latitude','longitude','population')
@@ -145,7 +145,7 @@ r_upper = c(50, 50+20 *(1:46), 1000)
 r_lower = c(0,r_upper[1:47])
 
 # Add r_i indexes 1,2,....
-pairwise_counties$r_i <- cut(sq
+pairwise_counties$r_i <- cut(
   pairwise_counties$distance_km, 
   breaks = c(-Inf, r_upper, Inf), 
   labels = 1:(length(r_upper) + 1),  # Adjusted length for labels
@@ -157,6 +157,7 @@ pairwise_counties$r <- round(r_upper[pairwise_counties$r_i],2)
 pairwise_counties$r_i = as.numeric(pairwise_counties$r_i)
 mean(unlist(all_cor_lengths), na.rm=TRUE)
 
+# write.csv(pairwise_counties,"pairwise_counties.csv")
 ```
 
 Output: pairwise_counties
@@ -298,9 +299,9 @@ covid_daily_avg_pop <- covid_daily_avg_pop[, columns_to_keep]
 county_week <- covid_daily_avg_pop %>%
   # Remove rows where avg_pop is less than 10000
   # or avg_pop is null
-  #filter(avg_pop >= 10000, !is.na(avg_pop)) %>%
+  filter(avg_pop >= 10000, !is.na(avg_pop)) %>%
   # FOr urban Counties:
-  filter(avg_pop >= 25000, !is.na(avg_pop)) %>%
+  #filter(avg_pop >= 25000, !is.na(avg_pop)) %>%
   # divide by population
   mutate(fract_avg_daily_cases = avg_daily_cases / avg_pop,
          fract_avg_daily_deaths = avg_daily_deaths / avg_pop)# %>%
@@ -324,6 +325,10 @@ county_week <- county_week %>%
   group_by(fips) %>%
   mutate(X_T = fract_avg_daily_cases - lag(fract_avg_daily_cases, default = 0, order_by = week))
 
+
+# add poverty tiers to county_week
+county_week<- merge(county_week, poverty, by.x = "fips", by.y = "FIPS_Code", all.x = TRUE)
+
 nrow(county_week) # 357104
 head(county_week)
 county_week$county_name <- paste(county_week$county, "County", sep = " ")
@@ -335,10 +340,6 @@ Output: county_week
   - 357104 rows (county-week) x 12 columns (time columns, covid cases)
   - features: fips, county, week, total_cases, total_deaths, fract_avg_daily_cases (this is Z_T(i) in the paper), start_date, avg_pop, month_year, X_T ("the extent to which the relative number of cases increased or decreased on a given week T compared to the previous week T-1")
 
-```{r}
-# add poverty tiers to county_week
-county_week<- merge(county_week, poverty, by.x = "fips", by.y = "FIPS_Code", all.x = TRUE)
-```
 
 ## Merge X_T's onto pairwise county data for fixed T for each pair county1-county2
 
@@ -703,10 +704,109 @@ for (select_tier1 in 1:4) {
     counter <- counter + 1
   }
 }
+length(urban_mhhinc_list_Cr)
 ```
 
+### Region & MHHINC Subset
 
+```{r}
+# Initialize lists to store results
+region_mhhinc_list_Cr <- vector("list", length = 40)
+region_mhhinc_cor_lengths <- vector("list", length = 40)
 
+# up until week 5 we have < 22 observations
+week_start <- 9
+week_end <- 165
+
+# Initialize counter for indexing
+counter <- 1
+
+regions <- c("Northeast", "Midwest", "South", "West")
+for (select_region in regions) {
+  
+for (select_tier1 in 1:4) {
+  # Iterate over select_tier2
+  for (select_tier2 in select_tier1:4) {
+    # Subset pairwise_counties and county_week based on select_tier1 and select_tier2
+    subset_pairwise_counties <- filter(pairwise_counties, region_1 == select_region & Tier_MedHHInc_1 == select_tier1 & Tier_MedHHInc_2 == select_tier2)
+    subset_county_week <- filter(county_week, region == select_region & Tier_MedHHInc == select_tier1 | Tier_MedHHInc == select_tier2)  
+  #Initialize vectors
+  list_Cr <- list()
+  cor_lengths <- numeric(week_end - week_start + 1)
+  
+  # Iterate over each week
+  for (w in week_start:week_end) {
+    # Subset covid data by fixing week T
+    county_week_T <- filter(subset_county_week, week == w)
+    
+    # Merge data frames based on fips1
+    counties_covid_1 <- merge(subset_pairwise_counties, county_week_T[, c("fips", "X_T")], by.x = "fips1", by.y = "fips", all.x = TRUE, suffixes = c("", "_1"))
+    names(counties_covid_1)[names(counties_covid_1) == "X_T"] <- "X_T_1"
+    
+    # Merge data frames based on fips2
+    covid_counties_1_2 <- merge(counties_covid_1, county_week_T[, c("fips", "X_T")], by.x = "fips2", by.y = "fips", all.x = TRUE, suffixes = c("", "_2"))
+    names(covid_counties_1_2)[names(covid_counties_1_2) == "X_T"] <- "X_T_2"
+    
+    # Add T column
+    covid_counties_1_2$T <- rep(w, nrow(covid_counties_1_2))
+    
+    # Remove rows where X_T is NA (no covid data for county pair)
+    covid_counties_1_2 <- covid_counties_1_2[!is.na(covid_counties_1_2$X_T_1) & !is.na(covid_counties_1_2$X_T_2), ]
+    
+    # Initialize empty vectors to store results
+    n <- length(r_upper)
+    C_r_T <- numeric(n)
+    significant <- logical(n)
+    
+    # For loop to calculate spatial correlation for each unique r_i, a distance interval between counties
+    for (i in 1:n) {
+      X_T_1_r <- covid_counties_1_2$X_T_1[covid_counties_1_2$r_i == i]
+      X_T_2_r <- covid_counties_1_2$X_T_2[covid_counties_1_2$r_i == i]
+      
+      # we need enough observations in data to run correlation test
+      if (length(X_T_1_r) > 3 && length(X_T_2_r) > 3) {
+        C_r_T[i] <- cor(X_T_1_r, X_T_2_r)
+        significant[i] <- (cor.test(X_T_1_r, X_T_2_r)$p.value < 0.01)
+      } else {
+        C_r_T[i] <- NA
+        significant[i] <- FALSE
+      }
+    }
+    
+    # Calculate correlation length
+    mid_point_intervals <- (r_upper + r_lower) / 2
+    first_zero <- which(significant == 0)[1]
+    xi <- mid_point_intervals[first_zero]
+    
+    # Save to vector/list
+    cor_lengths[w - week_start + 1] <- xi
+    list_Cr[[w - week_start + 1]] <- C_r_T
+  }
+  
+    # Save results to list
+    region_mhhinc_list_Cr[[counter]] <- list_Cr
+    region_mhhinc_cor_lengths[[counter]] <- cor_lengths
+    
+    # Increment counter
+    counter <- counter + 1
+}
+}
+}
+region_mhhinc_list_Cr[[40]]
+```
+
+```{r}
+# panel key
+regions <- c("Northeast", "Midwest", "South", "West")
+counter=1
+for (select_region in regions) {
+for (select_tier1 in 1:4) {
+  # Iterate over select_tier2
+  for (select_tier2 in select_tier1:4) {
+    print(paste(counter, select_region, select_tier1, select_tier2))
+    counter =1+ counter
+}}}
+```
 
 
 ## Read in Spatial Metrics Data
@@ -715,8 +815,8 @@ for (select_tier1 in 1:4) {
 # the above loop takes a really long time to iterate through all weeks so we save and read in
 
 
-# saveRDS(urban_mhhinc_cor_lengths, "urban_mhhinc_correlation_lengths.rds")
-# saveRDS(urban_mhhinc_list_Cr, "urban_mhhinc_Cr.rds")
+saveRDS(urban_region_mhhinc_cor_lengths, "region_mhhinc_correlation_lengths.rds")
+saveRDS(urban_region_mhhinc_list_Cr, "region_mhhinc_Cr.rds")
 
 # read in full data of spatial metrics from weeks 6-165
 list_Cr <- readRDS("all_Cr.rds")
@@ -759,6 +859,14 @@ cor_lengths_mhhinc <- readRDS("mhhinc_tiers_correlation_lengths.rds")
 
 urban_Cr_mhhinc <- readRDS("urban_mhhinc_Cr.rds")
 urban_cor_lengths_mhhinc <- readRDS("urban_mhhinc_correlation_lengths.rds")
+
+# region & mhhinc 
+Cr_region_mhhinc <- readRDS("region_mhhinc_Cr.rds")
+cor_lengths_region_mhhinc <- readRDS("region_mhhinc_correlation_lengths.rds")
+
+
+urban_Cr_region_mhhinc <- readRDS("urban_region_mhhinc_Cr.rds")
+urban_cor_lengths_region_mhhinc <- readRDS("urban_region_mhhinc_correlation_lengths.rds")
 
 ```
 
@@ -970,15 +1078,15 @@ urban_poverty_weekly_spatial_metrics = poverty_weekly_spatial_metrics
 # For Median Household Income
 
 # initialize data frame
-mhhinc_weekly_spatial_metrics <- data.frame(matrix(NA, nrow = 0, ncol = 54))
-colnames(mhhinc_weekly_spatial_metrics)[1:4] <- c("week_start_date", "total_cases", "marginal_cases", "cor_lengths")
-colnames(mhhinc_weekly_spatial_metrics)[5:52] <- as.character(col_names)
-colnames(mhhinc_weekly_spatial_metrics)[53:54] <- c("next_week_marginal_cases","mhhinc_tier")
+region_mhhinc_weekly_spatial_metrics <- data.frame(matrix(NA, nrow = 0, ncol = 54))
+colnames(region_mhhinc_weekly_spatial_metrics)[1:4] <- c("week_start_date", "total_cases", "marginal_cases", "cor_lengths")
+colnames(region_mhhinc_weekly_spatial_metrics)[5:52] <- as.character(col_names)
+colnames(region_mhhinc_weekly_spatial_metrics)[53:54] <- c("next_week_marginal_cases","block")
 
-# Weekly Spatial Metrics for Regions
-for (r in 1:10) {
-  list_Cr = urban_Cr_mhhinc[[r]]
-  cor_lengths = urban_cor_lengths_mhhinc[[r]]
+# Weekly Spatial Metrics for MHHINC
+for (r in 1:40) {
+  list_Cr = Cr_region_mhhinc[[r]]
+  cor_lengths = cor_lengths_region_mhhinc[[r]]
   
   # Create dataframe
   weekly_spatial_metrics <- data.frame(matrix(NA, nrow = length(list_Cr), ncol = 52))
@@ -1000,12 +1108,12 @@ for (r in 1:10) {
   weekly_spatial_metrics <- weekly_spatial_metrics %>%
     mutate(next_week_marginal_cases = dplyr::lead(marginal_cases))
   weekly_spatial_metrics$next_week_marginal_cases[(n-1):n] = c(NA, NA)
-  weekly_spatial_metrics$mhhinc_tier = rep(r, n)
-  mhhinc_weekly_spatial_metrics = rbind(mhhinc_weekly_spatial_metrics, weekly_spatial_metrics)
+  weekly_spatial_metrics$block = rep(r, n)
+  region_mhhinc_weekly_spatial_metrics = rbind(region_mhhinc_weekly_spatial_metrics, weekly_spatial_metrics)
 }
 
 # Add wave column
-mhhinc_weekly_spatial_metrics <- mhhinc_weekly_spatial_metrics %>%
+region_mhhinc_weekly_spatial_metrics <- region_mhhinc_weekly_spatial_metrics %>%
   mutate(
     wave = case_when(
       as.Date(week_start_date) >= "2021-12-11" ~ 3,
@@ -1015,14 +1123,44 @@ mhhinc_weekly_spatial_metrics <- mhhinc_weekly_spatial_metrics %>%
   )
 
 # Add wave dummies
-mhhinc_weekly_spatial_metrics <- mhhinc_weekly_spatial_metrics %>%
+region_mhhinc_weekly_spatial_metrics <- region_mhhinc_weekly_spatial_metrics %>%
   mutate(
     wave_1 = as.integer(wave == 1),
     wave_2 = as.integer(wave == 2)
   )
-unique(mhhinc_weekly_spatial_metrics$mhhinc_tier)
+unique(region_mhhinc_weekly_spatial_metrics$block)
 ```
 
+```{r}
+# panel key
+regions <- c("Northeast", "Midwest", "South", "West")
+block=1
+for (select_region in regions) {
+for (select_tier1 in 1:4) {
+  # Iterate over select_tier2
+  for (select_tier2 in select_tier1:4) {
+    print(paste(block, select_region, select_tier1, select_tier2))
+    block =1+ block
+  }}}
+```
+
+
+```{r}
+# Create region and tier columns based on block number
+
+for (select_region in regions) {
+  for (select_tier1 in 1:4) {
+  # Iterate over select_tier2
+  for (select_tier2 in select_tier1:4) {
+    combo = rbind(combo,c(select_region, paste(select_tier1,"_",select_tier2, sep = "")))
+}}}
+
+for (block_value in 1:40) {
+  region_mhhinc_weekly_spatial_metrics$region[region_mhhinc_weekly_spatial_metrics$block == block_value] = combo[block_value,1]
+  region_mhhinc_weekly_spatial_metrics$mhhinc_tiers[region_mhhinc_weekly_spatial_metrics$block == block_value] = combo[block_value,2]
+}
+View(region_mhhinc_weekly_spatial_metrics)
+```
 
 ```{r}
 # Initialize column names for dummy variables
@@ -1042,16 +1180,35 @@ for (select_tier1 in 1:4) {
     mhhinc_weekly_spatial_metrics[[dummy_col_name]] <- ifelse(mhhinc_weekly_spatial_metrics$mhhinc_tier == ((select_tier1 - 1) * 4 + select_tier2), 1, 0)
   }
 }
+```
 
 
+```{r}
 # Group dummies by tier difference
-mhhinc_weekly_spatial_metrics$same_tier <- ifelse(mhhinc_weekly_spatial_metrics$tier_1_1 == 1 | mhhinc_weekly_spatial_metrics$tier_2_2 == 1 | mhhinc_weekly_spatial_metrics$tier_3_3 == 1 | mhhinc_weekly_spatial_metrics$tier_4_4 == 1, 1, 0)
-mhhinc_weekly_spatial_metrics$tier_diff_1 <- ifelse(mhhinc_weekly_spatial_metrics$tier_1_2 == 1 | mhhinc_weekly_spatial_metrics$tier_2_3 == 1 | mhhinc_weekly_spatial_metrics$tier_3_4 == 1, 1, 0)
-mhhinc_weekly_spatial_metrics$tier_diff_2 <- ifelse(mhhinc_weekly_spatial_metrics$tier_1_3 == 1 | mhhinc_weekly_spatial_metrics$tier_2_4 == 1, 1, 0)
+region_mhhinc_weekly_spatial_metrics$same_tier <- ifelse(region_mhhinc_weekly_spatial_metrics$mhhinc_tiers == "1_1" | 
+       region_mhhinc_weekly_spatial_metrics$mhhinc_tiers == "2_2" |
+       region_mhhinc_weekly_spatial_metrics$mhhinc_tiers == "3_3" |
+       region_mhhinc_weekly_spatial_metrics$mhhinc_tiers == "4_4",
+       1, 0)
+region_mhhinc_weekly_spatial_metrics$tier_diff_1 <- ifelse(region_mhhinc_weekly_spatial_metrics$mhhinc_tiers == "1_2"|
+       region_mhhinc_weekly_spatial_metrics$mhhinc_tiers == "2_3" |
+       region_mhhinc_weekly_spatial_metrics$mhhinc_tiers == "3_4",
+       1, 0)
+region_mhhinc_weekly_spatial_metrics$tier_diff_2 <- ifelse(region_mhhinc_weekly_spatial_metrics$mhhinc_tiers == "1_3"|
+       region_mhhinc_weekly_spatial_metrics$mhhinc_tiers == "2_4",
+       1, 0)
+region_mhhinc_weekly_spatial_metrics$tier_diff_3 <- ifelse(region_mhhinc_weekly_spatial_metrics$mhhinc_tiers == "1_4",
+       1, 0)
 
-urban_mhhinc_weekly_spatial_metrics = mhhinc_weekly_spatial_metrics
+# Add region dummies
+region_mhhinc_weekly_spatial_metrics <- region_mhhinc_weekly_spatial_metrics %>%
+  mutate(
+    northeast = as.integer(region == "Northeast"),
+    midwest = as.integer(region == "Midwest"),
+    south = as.integer(region == "South")
+  )
 # save to cs
-# write.csv(urban_mhhinc_weekly_spatial_metrics, "urban_mhhinc_weekly_spatial_metrics.csv")
+# write.csv(region_mhhinc_weekly_spatial_metrics, "region_mhhinc_weekly_spatial_metrics.csv")
 ```
 
 
