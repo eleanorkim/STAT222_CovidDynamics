@@ -377,6 +377,7 @@ Output: covid_counties_1_2
   - 1778927 rows (county pairs) x 20 columns (county features, distance metrics, X_T for county 1 and for county 2, week T)
   - features: fips, state, county name, land area (sq km), latitude of centroid, longitude of centroid, population, region - for both county 1 and county 2, distance in km, upper bound of distance interval (r), distance interval index (r_i), X_T_1, X_T_2, week T
 
+
 # Calculations of Spatial Metrics
 
 ## Calculate Spatial Correlations and Correlation Lengths for Week T
@@ -442,8 +443,8 @@ legend("topright", legend = c("C(r)",expression(paste(argmin[r]~C(r) == 0))), co
 ```
 
 
-## Calculate Spatial Correlations and Correlation Lengths for a subset of weeks - Takes a Long Time
 
+## Calculate Spatial Correlations and Correlation Lengths for a subset of weeks - Takes a Long Time
 
 ### Region Subsets
 
@@ -809,6 +810,7 @@ for (select_tier1 in 1:4) {
 ```
 
 
+
 ## Read in Spatial Metrics Data
 
 ```{r}
@@ -871,7 +873,6 @@ urban_cor_lengths_region_mhhinc <- readRDS("urban_region_mhhinc_correlation_leng
 ```
 
 ## Create Dataframe for the Spatial Metrics for the Subset of Weeks
-
 ```{r}
 # prepare distance interval column names
 col_names <- paste("r", r_lower, r_upper, sep = "_")
@@ -889,6 +890,7 @@ total_cases_by_week <- county_week %>%
 total_cases = total_cases_by_week[9:165,2]
 ```
 
+### Whole Data (Waves) Weekly Spatial Metrics
 ```{r}
 # Weekly Spatial Metrics for Entire data set
 
@@ -933,6 +935,8 @@ urban_weekly_spatial_metrics = weekly_spatial_metrics
 # save to cs
 # write.csv(urban_weekly_spatial_metrics, "urban_weekly_spatial_metrics_waves.csv")
 ```
+
+### Regional Weekly Spatial Metrics
 
 ```{r}
 # For Regions
@@ -1002,6 +1006,9 @@ urban_regional_weekly_spatial_metrics = regional_weekly_spatial_metrics
 # save to cs
 # write.csv(urban_regional_weekly_spatial_metrics, "urban_regional_weekly_spatial_metrics.csv")
 ```
+
+
+### Poverty Weekly Spatial Metrics
 
 ```{r}
 # For Poverty
@@ -1073,6 +1080,8 @@ urban_poverty_weekly_spatial_metrics = poverty_weekly_spatial_metrics
 # save to cs
 # write.csv(urban_poverty_weekly_spatial_metrics, "urban_poverty_weekly_spatial_metrics.csv")
 ```
+
+### MHHINC/Regional Weekly Spatial Metrics
 
 ```{r}
 # For Median Household Income
@@ -1252,6 +1261,7 @@ for (i in seq_along(date_vector)) {
 # save to csv
 # write.csv(df_long, "panel_week_r_spatial_metrics.csv")
 ```
+
 
 # Some Spatial Metrics EDA
 
@@ -1707,7 +1717,7 @@ print(fips_no_pov_data)
 print(sapply(covid_yearly_final, function(x) sum(is.na(x))))
 ```
 
-# Poverty Rate Analysis for All Years
+## Poverty Rate Analysis for All Years
 
 ```{r}
 covid_fract_daily_avg_pov_filtered1 <- covid_yearly_final %>%
@@ -1735,7 +1745,7 @@ slope <- coef(model)["avg_pov_rate"]
 print(paste("Slope of the regression line:", slope))
 ```
 
-# Median Household Income Analysis for All Years
+## Median Household Income Analysis for All Years
 
 ```{r}
 covid_fract_daily_avg_pov_filtered2 <- covid_yearly_final %>%
@@ -2015,7 +2025,7 @@ writeData(wb, sheet = "BachelorsTierSumm", tier_summary_bachelors)
 saveWorkbook(wb, "Education_Tiers.xlsx", overwrite = TRUE)
 ```
 
-# Identifying counties with missing data
+## Identifying counties with missing data
 
 ```{r}
 # counties with no education date
@@ -2040,7 +2050,7 @@ covid_yearly_final_ed
 write.xlsx(covid_yearly_final_ed, "Processed_Socioeconomic.xlsx", rowNames = FALSE)
 ```
 
-# Less than a HS Diploma Rate from 2017-21
+## Less than a HS Diploma Rate from 2017-21
 
 ```{r}
 # Visualize the relationship between no_degree_rate and annual_cases_per_capita
@@ -2063,7 +2073,7 @@ slope <- coef(model)["no_degree_rate"]
 print(paste("Slope of the regression line:", slope))
 ```
 
-# Bachelors Degree or Higher from 2017-21
+## Bachelors Degree or Higher from 2017-21
 
 ```{r}
 # Visualize the relationship between bachelors_or_higher_rate and annual_cases_per_capita
@@ -2086,7 +2096,7 @@ slope <- coef(model)["bachelors_or_higher_rate"]
 print(paste("Slope of the regression line:", slope))
 ```
 
-# Is there a differece between those who had a Bacehlor's Degree in 2021 vs those who had less than a HS diploma?
+## Is there a differece between those who had a Bacehlor's Degree in 2021 vs those who had less than a HS diploma?
 
 ```{r}
 education_cases_2021 <- covid_yearly_final_ed %>%
