@@ -5,6 +5,9 @@ output:
   pdf_document: default
   html_document: default
 date: '2024-03-11'
+editor_options: 
+  markdown: 
+    wrap: 72
 ---
 
 ```{r, output = FALSE}
@@ -27,10 +30,14 @@ all_weekly_spatial_metrics_waves = read.csv("weekly_spatial_metrics_waves.csv")
 # same data set but calculations from urban counties only (pop >250k)
 urban_weekly_spatial_metrics_waves = read.csv("urban_weekly_spatial_metrics_waves.csv")
 ```
-Output: weekly_spatial_metrics_waves
-  - Weekly data set with corresponding covid cases, spatial correlations, and correlation lengths
-  - 157 rows (weeks 9 - 165) x 57 columns (date, cases, cor length, C(r), wave dummies)
-  - features: start date of week, total cases, marginal cases, next week's marginal cases, C(r) for distance intervals from [0,50] to [970,1000], correlation length, wave, wave 1 dummy, wave 2 dummy
+
+Output: weekly_spatial_metrics_waves - Weekly data set with
+corresponding covid cases, spatial correlations, and correlation
+lengths - 157 rows (weeks 9 - 165) x 57 columns (date, cases, cor
+length, C(r), wave dummies) - features: start date of week, total cases,
+marginal cases, next week's marginal cases, C(r) for distance intervals
+from [0,50] to [970,1000], correlation length, wave, wave 1 dummy, wave
+2 dummy
 
 ## All county data + Urban county data with Region + Wave dummies
 
@@ -41,10 +48,14 @@ all_regional_weekly_spatial_metrics = read.csv("regional_weekly_spatial_metrics.
 # same data set but calculations from urban counties only (pop >250k)
 urban_regional_weekly_spatial_metrics = read.csv("urban_regional_weekly_spatial_metrics.csv")
 ```
-Output: regional_weekly_spatial_metrics
-  - Weekly data set with corresponding covid cases, spatial correlations, and correlation lengths
-  - 628 rows (weeks 9 - 165 x 4 regions) x 59 columns (date, cases, cor length, C(r), region dummies)
-  - features: start date of week, total cases, marginal cases, next week's marginal cases, C(r) for distance intervals from [0,50] to [970,1000], correlation length, region, northeast dummy, midwest dummy, south dummy
+
+Output: regional_weekly_spatial_metrics - Weekly data set with
+corresponding covid cases, spatial correlations, and correlation
+lengths - 628 rows (weeks 9 - 165 x 4 regions) x 59 columns (date,
+cases, cor length, C(r), region dummies) - features: start date of week,
+total cases, marginal cases, next week's marginal cases, C(r) for
+distance intervals from [0,50] to [970,1000], correlation length,
+region, northeast dummy, midwest dummy, south dummy
 
 ## All county data + Urban county data with MHHINC + Wave dummies
 
@@ -55,10 +66,16 @@ all_mhhinc_weekly_spatial_metrics = read.csv("mhhinc_weekly_spatial_metrics.csv"
 # same data set but calculations from urban counties only (pop >250k)
 urban_mhhinc_weekly_spatial_metrics = read.csv("urban_mhhinc_weekly_spatial_metrics.csv")
 ```
-Output: mhhinc_weekly_spatial_metrics
-  - Weekly data set with corresponding covid cases, spatial correlations, and correlation lengths
-  - 1570 rows (weeks 9 - 165 x 10 combinations of 4 tiers) x 71 columns (date, cases, cor length, C(r), poverty dummies)
-  - features: start date of week, total cases, marginal cases, next week's marginal cases, C(r) for distance intervals from [0,50] to [970,1000], correlation length, income pair tiers  (4 choose 2) dummies, income tier differences (same tier, difference of 1, difference of 2, difference of 3)
+
+Output: mhhinc_weekly_spatial_metrics - Weekly data set with
+corresponding covid cases, spatial correlations, and correlation
+lengths - 1570 rows (weeks 9 - 165 x 10 combinations of 4 tiers) x 71
+columns (date, cases, cor length, C(r), poverty dummies) - features:
+start date of week, total cases, marginal cases, next week's marginal
+cases, C(r) for distance intervals from [0,50] to [970,1000],
+correlation length, income pair tiers (4 choose 2) dummies, income tier
+differences (same tier, difference of 1, difference of 2, difference of
+3)
 
 ## All county data with Region + MHHINC + Wave dummies
 
@@ -66,14 +83,20 @@ Output: mhhinc_weekly_spatial_metrics
 # Weekly Spatial Metrics with Median Household Income Columns
 all_region_mhhinc_weekly_spatial_metrics = read.csv("region_mhhinc_weekly_spatial_metrics.csv")
 ```
-Output: region_mhhinc_weekly_spatial_metrics
-  - Weekly data set with corresponding covid cases, spatial correlations, and correlation lengths
-  - 6280 rows (weeks 9 - 165 x 10 combinations of 4 tiers X 4 regions) x 67 columns (date, cases, cor length, C(r), region and tier difference dummies)
-  - features: start date of week, total cases, marginal cases, next week's marginal cases, C(r) for distance intervals from [0,50] to [970,1000], correlation length, region dummies, tier difference (same,1,2,3) dummies
-  
+
+Output: region_mhhinc_weekly_spatial_metrics - Weekly data set with
+corresponding covid cases, spatial correlations, and correlation
+lengths - 6280 rows (weeks 9 - 165 x 10 combinations of 4 tiers X 4
+regions) x 67 columns (date, cases, cor length, C(r), region and tier
+difference dummies) - features: start date of week, total cases,
+marginal cases, next week's marginal cases, C(r) for distance intervals
+from [0,50] to [970,1000], correlation length, region dummies, tier
+difference (same,1,2,3) dummies
+
 # Eleanor: Region + Median Household Income Models (1 data set, 2 models, 1 table, 1 model/table)
 
 ## Prepare Model Combinations
+
 ```{r}
 # Predictor: (1) correlation length & (2) log(local correlation)
 predictor = c("cor_lengths", "log(r_0_50)")
@@ -88,6 +111,7 @@ df_sametier = filter(all_region_mhhinc_weekly_spatial_metrics, same_tier == 1)
 ```
 
 ## Generate Models
+
 ```{r}
 # Create an empty list to store the models
 lm_models <- list()
@@ -119,15 +143,18 @@ names(lm_models)
 ```
 
 ## View Model Summaries
+
 ```{r}
 for (m in 1:length(lm_models)){
   print(summary(lm_models[[m]]))
 }
 ```
 
-Seems like we only have significant interaction terms in the first model with correlation length
+Seems like we only have significant interaction terms in the first model
+with correlation length
 
 ## Create Table
+
 ```{r}
 # Correlation Length Models
 stargazer(
@@ -139,6 +166,7 @@ stargazer(
 ```
 
 ## Print Results
+
 ```{r}
 # Create function that prints results
 print_coefficients <- function(coef_val, region, tier_diff, tier_descr, cor_length_unit) {
@@ -175,13 +203,13 @@ coef_val <- coefficients["cor_lengths"]
 print_coefficients(coef_val, "Midwest", "tier_diff_3", "differ by 3", cor_length_unit)
 
 ```
-Results we can report:
-Among counties in the **South** where the median household income **tiers are the same**
-a 50 km increase in correlation length corresponds to a *126.96%* change in cases in the following week
-Among counties in the **Midwest** where the median household income **tiers differ by 1**
-a 50 km increase in correlation length corresponds to a *118.23%* change in cases in the following week
 
-
+Results we can report: Among counties in the **South** where the median
+household income **tiers are the same** a 50 km increase in correlation
+length corresponds to a *126.96%* change in cases in the following week
+Among counties in the **Midwest** where the median household income
+**tiers differ by 1** a 50 km increase in correlation length corresponds
+to a *118.23%* change in cases in the following week
 
 # Lauren: General + Wave Models (2 data sets, 8 models, 4 tables, 2 models/table)
 
@@ -190,6 +218,7 @@ a 50 km increase in correlation length corresponds to a *118.23%* change in case
 # Meichen: MHHINC + Wave Models (2 data sets, 8 models, 4 tables, 2 models/table)
 
 ## Prepare Model Combinations
+
 ```{r}
 # Data sets: (1) all counties & (2) urban counties
 datasets = list(all_mhhinc_weekly_spatial_metrics, urban_mhhinc_weekly_spatial_metrics)
@@ -199,22 +228,24 @@ df_names = c("all","urban")
 predictor = c("cor_lengths", "log(r_0_50)")
 predictor_names = c("corlengths","localcor")
 
-# Covariates (1) region + mhhinc & (2) region + mhhinc + wave
+# Covariates (1) mhhinc & (2) mhhinc + wave
 covariates = list(c("*factor(wave)*same_tier","*factor(wave)*tier_diff_1","*factor(wave)*tier_diff_2"),
                   c("*same_tier","*tier_diff_1","*tier_diff_2"))
 var_names = c("wave_mhhinc","mhhinc")
 ```
 
 ## Generate Models
-```{r}
+
+```{r, warning = FALSE}
 # Create an empty list to store the models
-lm_models <- list()
+mhhinc_lm_models <- list()
 
 # Iterate of every combination of data, predictor, and covariates
 for (d in 1:length(datasets)) {
   df = datasets[d][[1]]
   for (p in 1:length(predictor)) {
     for (c in 1:length(covariates)) {
+      interactions = c()
       for (i in 1:length(covariates[[c]])) {
         interactions[i] <- paste(predictor[p], covariates[[c]][i])}
      
@@ -228,23 +259,154 @@ for (d in 1:length(datasets)) {
       model_name <- paste(df_names[d],"_", predictor_names[p], "_", var_names[c], sep = "")
       
       # Save the model to the list
-      lm_models[[model_name]] <- lm_model
+      mhhinc_lm_models[[model_name]] <- lm_model
     }}}
 ```
 
-## View Model Summaries
 ```{r}
-for (m in 1:length(lm_models)){
-  print(summary(lm_models[[m]]))
+print(names(mhhinc_lm_models))
+```
+
+## View Model Summaries
+
+```{r}
+for (m in 1:length(mhhinc_lm_models)){
+  print(summary(mhhinc_lm_models[[m]]))
 }
 ```
 
+all_corlengths_wave_mhhinc and urban_corlengths_wave_mhhinc do not have
+significant interaction terms, will not make a stargazer table for this
+model. Will make 3 stargazer tables, for these pairs of models:
+  (1) all_corlengths_mhhinc and urban_corlengths_mhhinc
+  (2) all_localcor_wave_mhhinc and urban_localcor_wave_mhhinc
+  (3) all_localcor_mhhinc and urban_localcor_mhhinc
 
+```{r, warning = FALSE}
+# stargazer table for all_corlengths_mhhinc and urban_corlengths_mhhinc
+# (1) is all
+# (2) is urban 
+stargazer(
+  c(mhhinc_lm_models[2], mhhinc_lm_models[6]),
+  type = 'text', 
+  title = "Regression of Covid Cases on Correlation Length and Mhhinc Tier Difference"
+)
+```
 
+```{r, warning = FALSE}
+# stargazer table for all_localcor_wave_mhhinc and urban_localcor_wave_mhhinc
+# (1) is all
+# (2) is urban
+stargazer(
+  c(mhhinc_lm_models[3], mhhinc_lm_models[7]),
+  type = 'text', 
+  title = "Regression of Covid Cases on Local Correlation,Mhhinc Tier Difference, and Wave"
+)
+```
 
+```{r, warning = FALSE}
+# all_localcor_mhhinc and urban_localcor_mhhinc
+# (1) is all
+# (2) is urban
+stargazer(
+  c(mhhinc_lm_models[4], mhhinc_lm_models[8]),
+  type = 'text', 
+  title = "Regression of Covid Cases on Local Correlation and Mhhinc Tier Difference"
+)
+```
 
+## Print Results 
 
-# ########################################## Old Stuff (Do new stuff above this)
+Do not print results for all_corlengths_wave_mhhinc and urban_corlengths_wave_mhhinc since there's no significant interaction terms.
+
+First look at the models corlengths_mhhinc. If we look at all counties, the interaction terms for cor_lengths:same_tier and cor_lengths:tier_diff_1 are significant. If we only look at urban counties, no interaction terms are significant. I'll print results for all_corlengths_mhhinc. 
+
+```{r}
+# Create function that prints results
+print_coefficients <- function(coef_val, tier_diff, tier_descr, cor_length_unit) {
+  if (!is.na(coef_val)) {
+    coef <- coef_val + coefficients["cor_lengths"]
+    cat("- Among all counties where the median household income tiers", tier_descr, "\n")
+    cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
+        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")}}
+
+coefficients <- coef(mhhinc_lm_models[[2]])
+tier_diff <- c("same_tier", "tier_diff_1")
+tier_descr <- c("are the same", "differ by 1")
+cor_length_unit <- 50
+
+# Iterate over tier diff dummies
+for (m in tier_diff) {
+  coef_val <- coefficients[paste("cor_lengths:", m,sep = "")]
+  print_coefficients(coef_val, m, tier_descr[match(m, tier_diff)], cor_length_unit)}
+```
+
+Next look at the models localcor_wave_mhhinc. If we look at all counties, only the interaction terms for wave_3:tier_diff_2 and local_corr:wave_3:tier_diff_2 are significant. If we look at urban counties, only the interaction terms for local_corr:wave_3 and local_corr:wave_2:tier_diff_1 are significant. 
+
+```{r}
+# print results for significant interaction terms for all counties
+coefficients <- coef(mhhinc_lm_models[[3]])
+
+coef_val <- coefficients["log(r_0_50):factor(wave)3:tier_diff_2"]
+coef <- coef_val + coefficients["log(r_0_50)"]
+cat("- Among all counties in wave 3 where the median household income tiers differ by 2 \n")
+cat("a 10 % increase in local correlation corresponds to a ", 
+        round(coef * 10, 2), "% change in cases in the following week\n\n", sep = "")
+```
+
+```{r}
+# print results for significant interaction terms for urban counties
+coefficients <- coef(mhhinc_lm_models[[7]])
+
+coef_val <- coefficients["log(r_0_50):factor(wave)2:tier_diff_1"]
+coef <- coef_val + coefficients["log(r_0_50)"]
+cat("- Among urban counties in wave 2 where the median household income tiers differ by 1 \n")
+cat("a 10 % increase in local correlation corresponds to a ", 
+        round(coef * 10, 2), "% change in cases in the following week\n\n", sep = "")
+```
+
+Lastly look at the models localcor_mhhinc. If we look at all counties, all three interaction terms are significant. If we look at urban counties, only the interaction terms for log(r_0_50)s:same_tier and log(r_0_50):tier_diff_1 are significant. 
+
+```{r}
+# print results for all counties 
+# Create function that prints results
+print_coefficients <- function(coef_val, tier_diff, tier_descr) {
+  if (!is.na(coef_val)) {
+    coef <- coef_val + coefficients["log(r_0_50)"]
+    cat("- Among all counties where the median household income tiers", tier_descr, "\n")
+    cat("a 10 % increase in local correlation corresponds to a ", 
+        round(coef * 10, 2), "% change in cases in the following week\n\n", sep = "")}}
+
+coefficients <- coef(mhhinc_lm_models[[4]])
+tier_diff <- c("same_tier", "tier_diff_1", "tier_diff_2")
+tier_descr <- c("are the same", "differ by 1", "differ by 2")
+
+# Iterate over tier diff dummies
+for (m in tier_diff) {
+  coef_val <- coefficients[paste("log(r_0_50):", m,sep = "")]
+  print_coefficients(coef_val, m, tier_descr[match(m, tier_diff)])}
+```
+```{r}
+# print results for all counties 
+# Create function that prints results
+print_coefficients <- function(coef_val, tier_diff, tier_descr) {
+  if (!is.na(coef_val)) {
+    coef <- coef_val + coefficients["log(r_0_50)"]
+    cat("- Among urban counties where the median household income tiers", tier_descr, "\n")
+    cat("a 10 % increase in local correlation corresponds to a ", 
+        round(coef * 10, 2), "% change in cases in the following week\n\n", sep = "")}}
+
+coefficients <- coef(mhhinc_lm_models[[8]])
+tier_diff <- c("same_tier", "tier_diff_1")
+tier_descr <- c("are the same", "differ by 1")
+
+# Iterate over tier diff dummies
+for (m in tier_diff) {
+  coef_val <- coefficients[paste("log(r_0_50):", m,sep = "")]
+  print_coefficients(coef_val, m, tier_descr[match(m, tier_diff)])}
+```
+
+# \########################################## Old Stuff (Do new stuff above this)
 
 ```{r}
 # Weekly Spatial Metrics with Poverty Columns
@@ -253,14 +415,17 @@ poverty_weekly_spatial_metrics = read.csv("poverty_weekly_spatial_metrics.csv")
 # same data set but calculations from urban counties only (pop >250k)
 urban_poverty_weekly_spatial_metrics = read.csv("urban_poverty_weekly_spatial_metrics.csv")
 ```
-Output: poverty_weekly_spatial_metrics
-  - Weekly data set with corresponding covid cases, spatial correlations, and correlation lengths
-  - 942 rows (weeks 9 - 165 x 6 poverty tiers) x 61 columns (date, cases, cor length, C(r), poverty dummies)
-  - features: start date of week, total cases, marginal cases, next week's marginal cases, C(r) for distance intervals from [0,50] to [970,1000], correlation length, pov tier (1,1) dummy, pov tier (2,2) dummy, pov tier (3,3) dummy, pov tier (1,2) dummy, pov tier (1,3) dummy, pov tier (2,3) dummy
-  
-  
-## Model on entire data
 
+Output: poverty_weekly_spatial_metrics - Weekly data set with
+corresponding covid cases, spatial correlations, and correlation
+lengths - 942 rows (weeks 9 - 165 x 6 poverty tiers) x 61 columns (date,
+cases, cor length, C(r), poverty dummies) - features: start date of
+week, total cases, marginal cases, next week's marginal cases, C(r) for
+distance intervals from [0,50] to [970,1000], correlation length, pov
+tier (1,1) dummy, pov tier (2,2) dummy, pov tier (3,3) dummy, pov tier
+(1,2) dummy, pov tier (1,3) dummy, pov tier (2,3) dummy
+
+## Model on entire data
 
 ```{r}
 # Log-Linear Model (better)
@@ -383,7 +548,7 @@ for(i in 1:nrow(mhhinc_factor_tiers)) {
 }
 ```
 
-## Model based on poverty tiers  
+## Model based on poverty tiers
 
 ```{r}
 # full model 
@@ -457,7 +622,8 @@ robust_se_int <- sqrt(diag(vcovHC(region_model_int, type = "HC1")))
 robust_test_int <- coeftest(region_model_int, vcov = vcovHC(region_model_int, type = "HC1"))
 print(robust_test_int)
 ```
-## Split into a "simple model" for subsetted data 
+
+## Split into a "simple model" for subsetted data
 
 ```{r}
 # simple model for northeast
@@ -473,6 +639,7 @@ print(robust_test)
 # Print Result
 paste("a 10% increase in correlation length in the Northeast region corresponds to a ", round(northeast_model$coefficients[2]*10,2),"% change in cases in the following week")
 ```
+
 ```{r}
 # simple model for midwest
 mw_weekly_spatial_metrics <- regional_weekly_spatial_metrics %>% filter(midwest == 1)
