@@ -215,6 +215,253 @@ to a *118.23%* change in cases in the following week
 
 # Aarushi: Region + Wave Models (2 data sets, 8 models, 4 tables, 2 models/table)
 
+## Prepare Model Combinations
+
+```{r}
+# Data sets: (1) all counties & (2) urban counties
+datasets = list(all_regional_weekly_spatial_metrics, urban_regional_weekly_spatial_metrics)
+df_names = c("all","urban")
+
+# Predictor: (1) correlation length & (2) log(local correlation)
+predictor = c("cor_lengths", "log(r_0_50)")
+predictor_names = c("corlengths","localcor")
+
+# Covariates (1) mhhinc & (2) mhhinc + wave
+covariates = list(c("*factor(wave)*northeast","*factor(wave)*midwest","*factor(wave)*south"),
+                  c("*northeast","*midwest","*south"))
+var_names = c("wave_region","region")
+```
+
+## Generate Models
+
+```{r, warning = FALSE}
+# Create an empty list to store the models
+region_lm_models <- list()
+
+# Iterate of every combination of data, predictor, and covariates
+for (d in 1:length(datasets)) {
+  df = datasets[d][[1]]
+  for (p in 1:length(predictor)) {
+    for (c in 1:length(covariates)) {
+      interactions = c()
+      for (i in 1:length(covariates[[c]])) {
+        interactions[i] <- paste(predictor[p], covariates[[c]][i])}
+     
+      # Create the formula
+      lm_formula <- as.formula(paste("log(next_week_marginal_cases) ~", paste(unlist(interactions), collapse = " + ")))
+      
+      # Fit the linear model
+      lm_model <- lm(lm_formula, data = df)
+      
+      # Generate a name for the model object
+      model_name <- paste(df_names[d],"_", predictor_names[p], "_", var_names[c], sep = "")
+      
+      # Save the model to the list
+      region_lm_models[[model_name]] <- lm_model
+    }}}
+```
+
+```{r}
+print(names(region_lm_models))
+```
+
+## View Model Summaries
+
+```{r}
+for (m in 1:length(region_lm_models)){
+  print(summary(region_lm_models[[m]]))
+}
+```
+all_localcor_region and urban_localcor_region do not have
+significant interaction terms, so we will not make a stargazer table 
+for this model. Will make 3 stargazer tables, for these pairs of models:
+  (1) all_corlengths_wave_region and urban_corlengths_wave_region
+  (2) all_corlengths_region and urban_corlengths_region
+  (3) all_localcor_wave_region and urban_localcor_wave_region
+  
+```{r, warning = FALSE}
+# stargazer table for all_corlengths_wave_region and urban_corlengths_wave_region
+# (1) is all
+# (2) is urban 
+stargazer(
+  c(region_lm_models[1], region_lm_models[5]),
+  type = 'text', 
+  title = "Regression of Covid Cases on Correlation Length, Wave and Region"
+)
+```
+
+```{r, warning = FALSE}
+# stargazer table for all_corlengths_region and urban_corlengths_region
+# (1) is all
+# (2) is urban
+stargazer(
+  c(region_lm_models[2], region_lm_models[6]),
+  type = 'text', 
+  title = "Regression of Covid Cases on Correlation Length and Region"
+)
+```
+
+```{r, warning = FALSE}
+# all_localcor_wave_region and urban_localcor_wave_region
+# (1) is all
+# (2) is urban
+stargazer(
+  c(region_lm_models[3], region_lm_models[7]),
+  type = 'text', 
+  title = "Regression of Covid Cases on Local Correlation, Wave and Region"
+)
+```
+
+## Print Results 
+
+Do not print results for all_localcor_region and urban_localcor_region since there's no significant interaction terms.
+
+First look at the models corlengths_wave_region. If we look at all counties, the interaction terms for cor_lengths:factor(wave)3 and cor_lengths:northeast are significant. If we only look at urban counties, all interaction terms are significant except cor_lengths:midwest and wave 2:midwest. I'll print results for urban_corlengths_wave_region.
+
+```{r}
+# print results for significant interaction terms for urban counties
+coefficients <- coef(region_lm_models[[5]])
+
+coef_val <- coefficients["cor_lengths:factor(wave)2"]
+coef <- coef_val + coefficients["cor_lengths"]
+cor_length_unit <- 50
+cat("- Among all urban counties in wave 2 \n")
+cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
+        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
+
+coef_val <- coefficients["cor_lengths:factor(wave)3"]
+coef <- coef_val + coefficients["cor_lengths"]
+cor_length_unit <- 50
+cat("- Among all urban counties in wave 3 \n")
+cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
+        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
+
+coef_val <- coefficients["cor_lengths:northeast"]
+coef <- coef_val + coefficients["cor_lengths"]
+cor_length_unit <- 50
+cat("- Among all urban counties in the NorthEast region \n")
+cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
+        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
+
+coef_val <- coefficients["cor_lengths:south"]
+coef <- coef_val + coefficients["cor_lengths"]
+cor_length_unit <- 50
+cat("- Among all urban counties in the South region \n")
+cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
+        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
+
+coef_val <- coefficients["cor_lengths:factor(wave)2:northeast"]
+coef <- coef_val + coefficients["cor_lengths"]
+cor_length_unit <- 50
+cat("- Among all urban counties in Wave 2 in the Northeast region \n")
+cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
+        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
+
+coef_val <- coefficients["cor_lengths:factor(wave)2:midwest"]
+coef <- coef_val + coefficients["cor_lengths"]
+cor_length_unit <- 50
+cat("- Among all urban counties in Wave 2 in the Midwest region \n")
+cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
+        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
+
+coef_val <- coefficients["cor_lengths:factor(wave)2:south"]
+coef <- coef_val + coefficients["cor_lengths"]
+cor_length_unit <- 50
+cat("- Among all urban counties in Wave 2 in the South region \n")
+cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
+        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
+
+coef_val <- coefficients["cor_lengths:factor(wave)3:northeast"]
+coef <- coef_val + coefficients["cor_lengths"]
+cor_length_unit <- 50
+cat("- Among all urban counties in Wave 3 in the Northeast region \n")
+cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
+        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
+
+coef_val <- coefficients["cor_lengths:factor(wave)3:midwest"]
+coef <- coef_val + coefficients["cor_lengths"]
+cor_length_unit <- 50
+cat("- Among all urban counties in Wave 3 in the Midwest region \n")
+cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
+        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
+
+coef_val <- coefficients["cor_lengths:factor(wave)3:south"]
+coef <- coef_val + coefficients["cor_lengths"]
+cor_length_unit <- 50
+cat("- Among all urban counties in Wave 3 in the South region \n")
+cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
+        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
+
+```
+
+Next look at the models corlengths_region. If we look at all counties, the interaction term for cor_lengths:midwest is significant. If we only look at urban counties, the interaction term for cor_lengths:south is significant. 
+
+```{r}
+# print results for significant interaction terms for all counties
+coefficients <- coef(region_lm_models[[2]])
+
+coef_val <- coefficients["cor_lengths:midwest"]
+coef <- coef_val + coefficients["cor_lengths"]
+cor_length_unit <- 50
+cat("- Among all counties in the Midwest region \n")
+cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
+        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
+```
+
+```{r}
+# print results for significant interaction terms for urban counties
+coefficients <- coef(region_lm_models[[6]])
+
+coef_val <- coefficients["cor_lengths:south"]
+coef <- coef_val + coefficients["cor_lengths"]
+cor_length_unit <- 50
+cat("- Among all urban counties in the South region \n")
+cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
+        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
+```
+
+Lastly look at the models localcor_wave_region. If we look at all counties, the interaction terms for log(r_0_50):factor(wave)3, log(r_0_50):northeast, factor(wave)2:midwest, factor(wave)3:south and log(r_0_50):factor(wave)3:south are significant. If we only look at urban counties, the interaction terms for log(r_0_50):northeast and log(r_0_50):factor(wave)3:midwest are significant. 
+
+```{r}
+# print results for significant interaction terms for all counties
+coefficients <- coef(region_lm_models[[3]])
+
+coef_val <- coefficients["log(r_0_50):factor(wave)3"]
+coef <- coef_val + coefficients["log(r_0_50)"]
+cat("- Among all counties in Wave 3 \n")
+cat("a 10 % increase in local correlation corresponds to a ", 
+        round(coef * 10, 2), "% change in cases in the following week\n\n", sep = "")
+
+coef_val <- coefficients["log(r_0_50):northeast"]
+coef <- coef_val + coefficients["log(r_0_50)"]
+cat("- Among all counties in the Northeast region \n")
+cat("a 10 % increase in local correlation corresponds to a ", 
+        round(coef * 10, 2), "% change in cases in the following week\n\n", sep = "")
+
+coef_val <- coefficients["log(r_0_50):factor(wave)3:south"]
+coef <- coef_val + coefficients["log(r_0_50)"]
+cat("- Among all counties in Wave 3 in the South region \n")
+cat("a 10 % increase in local correlation corresponds to a ", 
+        round(coef * 10, 2), "% change in cases in the following week\n\n", sep = "")
+```
+
+```{r}
+# print results for significant interaction terms for urban counties
+coefficients <- coef(region_lm_models[[7]])
+
+coef_val <- coefficients["log(r_0_50):northeast"]
+coef <- coef_val + coefficients["log(r_0_50)"]
+cat("- Among all counties in the Northeast region \n")
+cat("a 10 % increase in local correlation corresponds to a ", 
+        round(coef * 10, 2), "% change in cases in the following week\n\n", sep = "")
+
+coef_val <- coefficients["log(r_0_50):factor(wave)3:midwest"]
+coef <- coef_val + coefficients["log(r_0_50)"]
+cat("- Among all counties in Wave 3 in the Midwest region \n")
+cat("a 10 % increase in local correlation corresponds to a ", 
+        round(coef * 10, 2), "% change in cases in the following week\n\n", sep = "")
+```
+
 # Meichen: MHHINC + Wave Models (2 data sets, 8 models, 4 tables, 2 models/table)
 
 ## Prepare Model Combinations
