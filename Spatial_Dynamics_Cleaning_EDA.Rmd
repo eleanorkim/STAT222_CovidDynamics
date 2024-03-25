@@ -43,11 +43,11 @@ counties_pop = merge(counties, population[, c("FIPStxt", "CENSUS_2020_POP")],
                      by.x = "GEOID", by.y = "FIPStxt", all.x = TRUE)
 
 # Drop counties with pop < 10k
-county_subset = filter(counties_pop, CENSUS_2020_POP >= 10000)
-nrow(county_subset) # 2229
+# county_subset = filter(counties_pop, CENSUS_2020_POP >= 10000)
+# nrow(county_subset) # 2229
 
 # For urban data only:
-#county_subset = filter(counties_pop, CENSUS_2020_POP >= 250000)
+county_subset = filter(counties_pop, CENSUS_2020_POP >= 250000)
 
 
 # Rename cols
@@ -298,7 +298,7 @@ county_week <- covid_daily_avg_pop %>%
   # or avg_pop is null
   filter(avg_pop >= 10000, !is.na(avg_pop)) %>%
   # FOr urban Counties:
-  #filter(avg_pop >= 25000, !is.na(avg_pop)) %>%
+  filter(avg_pop >= 25000, !is.na(avg_pop)) %>%
   # divide by population
   mutate(fract_avg_daily_cases = avg_daily_cases / avg_pop,
          fract_avg_daily_deaths = avg_daily_deaths / avg_pop)# %>%
@@ -708,6 +708,7 @@ length(urban_mhhinc_list_Cr)
 ## Region & MHHINC Subset
 
 ```{r}
+
 # Initialize lists to store results
 region_mhhinc_list_localcor <- vector("list", length = 40)
 # up until week 5 we have < 22 observations
@@ -792,7 +793,7 @@ for (select_tier1 in 1:4) {
 # the above loop takes a really long time to iterate through all weeks so we save and read in
 
 
-saveRDS(region_mhhinc_list_localcor, "region_mhhinc_list_localcor.rds")
+saveRDS(region_mhhinc_list_localcor, "urban_region_mhhinc_list_localcor.rds")
 
 # read in full data of spatial metrics from weeks 6-165
 list_Cr <- readRDS("all_Cr.rds")
@@ -840,6 +841,7 @@ urban_cor_lengths_mhhinc <- readRDS("urban_mhhinc_correlation_lengths.rds")
 Cr_region_mhhinc <- readRDS("region_mhhinc_Cr.rds")
 cor_lengths_region_mhhinc <- readRDS("region_mhhinc_correlation_lengths.rds")
 localcor_region_mhhinc <- readRDS("region_mhhinc_list_localcor.rds")
+urban_localcor_region_mhhinc <- readRDS("urban_region_mhhinc_list_localcor.rds")
 
 ```
 
@@ -1192,7 +1194,7 @@ colnames(region_mhhinc_weekly_localcor) <- c("week_start_date", "total_cases", "
 
 # Weekly Spatial Metrics for MHHINC
 for (r in 1:40) {
-  localcor = localcor_region_mhhinc[[r]]
+  localcor = urban_localcor_region_mhhinc[[r]]
   
   # Create dataframe
   weekly_spatial_metrics <- data.frame(matrix(NA, nrow = length(localcor), ncol = 4))
@@ -1208,7 +1210,7 @@ for (r in 1:40) {
   weekly_spatial_metrics <- weekly_spatial_metrics %>%
     mutate(next_week_marginal_cases = dplyr::lead(marginal_cases))
   weekly_spatial_metrics$next_week_marginal_cases[(n-1):n] = c(NA, NA)
-  weekly_spatial_metrics$block = rep(r, n)
+  weekly_spatial_metrics$block = rep(r, 157)
   region_mhhinc_weekly_localcor = rbind(region_mhhinc_weekly_localcor, weekly_spatial_metrics)
 }
 
@@ -1229,7 +1231,7 @@ region_mhhinc_weekly_localcor <- region_mhhinc_weekly_localcor %>%
     wave_2 = as.integer(wave == 2),
     wave_3 = as.integer(wave == 3)
   )
-head(region_mhhinc_weekly_localcor)
+View(region_mhhinc_weekly_localcor)
 ```
 
 ```{r}
@@ -1294,7 +1296,7 @@ region_mhhinc_weekly_localcor <- region_mhhinc_weekly_localcor %>%
   )
 
 # save to cs
-# write.csv(region_mhhinc_weekly_localcor, "region_mhhinc_weekly_localcor.csv")
+write.csv(region_mhhinc_weekly_localcor, "urban_region_mhhinc_weekly_localcor.csv")
 ```
 
 ### Panel Data
