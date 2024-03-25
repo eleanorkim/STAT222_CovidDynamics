@@ -169,6 +169,27 @@ stargazer(
 )
 ```
 
+## Check conditions of Normality of Residuals, Homoskedasticity, Linearity, Independence of Residuals
+
+```{r}
+for (i in 1:length(simple_lm_models))
+lm_model = simple_lm_models[[1]]
+
+# 1. Linearity Check (Visual Inspection)
+plot(residuals(lm_model) ~ fitted(lm_model))
+
+# 2. Independence Check# Durbin-Watson test
+durbinWatsonTest(lm_model)
+
+# 3. Homoscedasticity Check (Visual Inspection)
+# Breusch-Pagan test for Heteroscedasticity
+bptest(lm_model)
+
+# 4. Normality of Residuals Check
+# Histogram of residuals
+hist(residuals(lm_model), main = "Histogram of Residuals")
+```
+
 ## Print Results
 
 ```{r}
@@ -178,61 +199,6 @@ var = c("correlation length","local correlation")
 for (i in 1:4) {
   adj_i = 2-i%%2
   print(paste("a 1 sd increase in ", var[adj_i]," (",units[adj_i], ") corresponds to a ", round(simple_lm_models[[i]]$coefficients[2]*units[adj_i]*100,2),"% change in cases in the following week across ", df_names[(i>2)+1]," counties", sep=""))}
-```
-
-## Check conditions
-
-```{r}
-for (i in 1:length(simple_lm_models))
-lm_model = simple_lm_models[[1]]
-
-# 1. Linearity Check (Visual Inspection)
-plot(lm_model)  # Plot diagnostics including residual vs. fitted values
-
-# 2. Independence Check
-# Autocorrelation plot
-acf(residuals(lm_model))
-
-# Durbin-Watson test
-durbinWatsonTest(lm_model)
-
-# 3. Homoscedasticity Check (Visual Inspection)
-# Residuals vs. Fitted values plot
-plot(residuals(lm_model) ~ fitted(lm_model))
-
-# Breusch-Pagan test for Heteroscedasticity
-bptest(lm_model)
-
-# 4. Normality of Residuals Check
-# Histogram of residuals
-hist(residuals(lm_model), main = "Histogram of Residuals")
-
-# 5. No Perfect Multicollinearity Check
-# Variance Inflation Factors (VIF)
-vif(lm(log(next_week_marginal_cases) ~  cor_lengths + cor_lengths*same_tier + cor_lengths*tier_diff_1 + cor_lengths*tier_diff_2  , data = all_region_mhhinc_weekly_spatial_metrics))
-vif(lm_scaled)
-
-# Scaling the variables in the model
-scaled_data <- within(all_region_mhhinc_weekly_spatial_metrics, {
-  cor_lengths_scaled <- scale(cor_lengths)
-  northeast_scaled <- scale(northeast)
-  midwest_scaled <- scale(midwest)
-  south_scaled <- scale(south)
-  same_tier_scaled <- scale(same_tier)
-  tier_diff_1_scaled <- scale(tier_diff_1)
-  tier_diff_2_scaled <- scale(tier_diff_2)
-})
-
-# Fit the scaled model
-lm_scaled <- lm(log(next_week_marginal_cases) ~ cor_lengths_scaled * northeast_scaled * same_tier_scaled + 
-    cor_lengths_scaled * northeast_scaled * tier_diff_1_scaled + cor_lengths_scaled * northeast_scaled * 
-    tier_diff_2_scaled + cor_lengths_scaled * midwest_scaled * same_tier_scaled + 
-    cor_lengths_scaled * midwest_scaled * tier_diff_1_scaled + cor_lengths_scaled * midwest_scaled * 
-    tier_diff_2_scaled + cor_lengths_scaled * south_scaled * same_tier_scaled + 
-    cor_lengths_scaled * south_scaled * tier_diff_1_scaled + cor_lengths_scaled * south_scaled * 
-    tier_diff_2_scaled, data = scaled_data)
-summary(lm_model)
-
 ```
 
 # Eleanor: Region + Median Household Income Models (1 data set, 2 models, 1 table, 1 model/table)
@@ -282,9 +248,6 @@ for (m in 1:length(lm_models)){
 }
 ```
 
-Seems like the only interactive term with significant results (for both models) is the same tier category in the South
-
-
 ```{r}
 # Correlation Length Models
 stargazer(
@@ -318,50 +281,96 @@ vif(lm(log(next_week_marginal_cases) ~  r_0_50 + factor(region) + factor(mhhinc_
 ```
 
 
-## Print Results
+## Print non-NA Significant Results
 
 ```{r}
-# Create function that prints results
-print_coefficients <- function(coef_val, region, tier_diff, tier_descr) {
-  if (!is.na(coef_val)) {
-    coef <- coef_val + coefficients["r_0_50"]
+lm_model = lm_models[[1]]
+
+# Create function that prints interpretation of coefficeints
+print_interpretation <- function(interaction, region, tier_diff, tier_descr, significant) {
+  if (!is.na(interaction) & significant == 1) {
+    coef <- interaction + coefficients["r_0_50"]
     cat("- Among counties in the", region, "where the median household income tiers", tier_descr, "\n")
     cat("a 1 sd increase in local correlation (.19) corresponds to a ", 
-        round(coef * .19* 100, 2), "% increase in cases in the following week\n", sep = "")}}
+        round(coef * .19* 100, 2), "% increase in cases in the following week. Significant? ",significant == 1,"\n", sep = "")}}
 
-coefficients <- coef(lm_models[[1]])
-regions <- c("Northeast", "West", "South")
-tier_diff <- c("same_tier", "tier_diff_1", "tier_diff_2")
-tier_descr <- c("are the same", "differ by 1", "differ by 2")
+# Create function that returns coefficient
+print_coefficient <- function(interaction, region, tier_diff, tier_descr) {
+  if (!is.na(interaction)) {
+    coef <- interaction + coefficients["r_0_50"]
+    return(coef)
+    }
+  else {return(NA)}
+  }
+
+# Create function to calculate significance of coefficient based on t-statistic
+is_significant <- function(coef, se, threshold = 1.96) {
+  # Calculate t-statistic
+  t_stat <- coef / se
+  
+  # Check if absolute value of t-statistic exceeds threshold for significance
+  return(abs(t_stat) > threshold)
+}
+
+# Get stats
+coefficients <- coef(lm_model)
+coef_names <- names(coef(lm_model))
+se <- summary(lm_model)$coefficients[, "Std. Error"]
+se_named <- rep(NA, length(coef_names))
+se_named[names(se)] <- se
+st_errors <- se_named[coef_names]
+
+# Initialize values
+regions <- c("Northeast", "South", "West", "Midwest")
+tier_diff <- c("same_tier", "tier_diff_1", "tier_diff_2", "tier_diff_3")
+tier_descr <- c("are the same", "differ by 1", "differ by 2", "differ by 3")
+full_coef = c()
+significant =
+i=1
 
 # Iterate over Regions and Tier diff dummies
-for (r in regions) {
-  for (m in tier_diff) {
-    coef_val <- coefficients[paste("r_0_50:factor(region)", r, ":", m, sep = "")]
-    print_coefficients(coef_val, r, m, tier_descr[match(m, tier_diff)])}}
-
-# Midwest Coefficients
-for (m in tier_diff) {
-  coef_val <- coefficients[paste("r_0_50:", m, sep = "")]
-  print_coefficients(coef_val, "Midwest", m, tier_descr[match(m, tier_diff)])}
-
-# Tier diff 3 counties
-for (r in regions) {
-  coef_val <- coefficients[paste("r_0_50:factor(region)", r, sep = "")]
-  print_coefficients(coef_val, r, "tier_diff_3", "differ by 3")}
-
-# Midwest & Tier diff 3
-coef_val <- coefficients["r_0_50"]
-print_coefficients(coef_val, "Midwest", "tier_diff_3", "differ by 3")
-summary(lm_model)
+for (r in 1:length(regions)) {
+  region <- regions[r]
+  for (m in 1:length(tier_diff)) {
+    tierdiff <- tier_diff[m]
+    if (region == "Midwest") {
+      partial_interaction_r <- 0
+      se_partial_r <- 0
+    } else {
+      partial_interaction_r <- coefficients[(8 + r)]
+      se_partial_r <- st_errors[(8 + r)]
+    }
+    if (tierdiff == "tier_diff_3") {
+      partial_interaction_m <- 0
+      se_partial_m <- 0
+    } else {
+      partial_interaction_m <- coefficients[(4*(m+2))]
+      se_partial_m <- st_errors[(4*(m+2))]
+    } 
+    if (tierdiff != "tier_diff_3" & region != "Midwest") {
+      full_interaction_rm <- coefficients[paste0("r_0_50:factor(region)", region, ":", tierdiff)]
+      se_full_rm <- st_errors[paste0("r_0_50:factor(region)", region, ":", tierdiff)]
+    } else {
+      full_interaction_rm <- 0
+      se_full_rm <- 0
+    }
+    
+    # Calculate total standard error
+    se_total <- sqrt(se_partial_r^2 + se_partial_m^2 + se_full_rm^2 + st_errors[2]^2)
+  
+    # Store coefficient information
+    interaction <- partial_interaction_r + partial_interaction_m + full_interaction_rm
+    full_coef[i] = print_coefficient(interaction, region, tierdiff, tier_descr[m])
+    
+    # Print interpretation and significance
+    significant[i] <- is_significant(as.numeric(full_coef[i]), as.numeric((se_total)))
+    print_interpretation(interaction, region, tierdiff, tier_descr[m], significant[i])
+    i <- i + 1
+  }
+}
 ```
 
-Results we can report: Among counties in the **South** where the median
-household income **tiers are the same** a 50 km increase in correlation
-length corresponds to a *126.96%* change in cases in the following week
-Among counties in the **Midwest** where the median household income
-**tiers differ by 1** a 50 km increase in correlation length corresponds
-to a *118.23%* change in cases in the following week
+All results in the South & Midwest are significant. Higher effects among counties similar in mhhinc tier.
 
 # Lauren: General + Wave Models (2 data sets, 8 models, 4 tables, 2 models/table)
 
@@ -808,6 +817,9 @@ for (m in tier_diff) {
 ```
 
 *note from eleanor: let's drive our narrative around differing by tier 1 influencing cases the most (wave 2 in particular) in all counties*
+
+
+
 
 # \########################################## Old Stuff (Do new stuff above this)
 
