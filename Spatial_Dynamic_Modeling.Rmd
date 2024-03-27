@@ -171,8 +171,8 @@ stargazer(
 ## Check conditions of Normality of Residuals, Homoskedasticity, Linearity, Independence of Residuals
 
 ```{r}
-for (i in 1:length(simple_lm_models))
-lm_model = simple_lm_models[[1]]
+for (i in 1:length(simple_lm_models)) {
+lm_model = simple_lm_models[[i]]
 
 # 1. Linearity Check (Visual Inspection)
 plot(residuals(lm_model) ~ fitted(lm_model))
@@ -187,18 +187,21 @@ bptest(lm_model)
 # 4. Normality of Residuals Check
 # Histogram of residuals
 hist(residuals(lm_model), main = "Histogram of Residuals")
+}
+
+# Heteroskedasticity/Non-linearity in Urban Local Correlation Model
 ```
 
 ## Print Results
 
 ```{r}
-units = c(round(sd(weekly_spatial_metrics_waves$cor_lengths, na.rm = TRUE),2), round( sd(weekly_spatial_metrics_waves$r_0_50) ,2))
+units = c(round(sd(urban_weekly_spatial_metrics_waves$cor_lengths, na.rm = TRUE),2), round( sd(urban_weekly_spatial_metrics_waves$r_0_50) ,2))
 var = c("correlation length","local correlation")
-
 for (i in 1:4) {
   adj_i = 2-i%%2
   print(paste("a 1 sd increase in ", var[adj_i]," (",units[adj_i], ") corresponds to a ", round(simple_lm_models[[i]]$coefficients[2]*units[adj_i]*100,2),"% change in cases in the following week across ", df_names[(i>2)+1]," counties", sep=""))}
 ```
+Effects are less strong when comparing across only the urban counties. Local correlation and correlation length seem to both hold a strong effect in indicating/predicting a rise in cases in the next week.
 
 # Eleanor: Region + Median Household Income Models (1 data set, 2 models, 1 table, 1 model/table)
 
@@ -209,7 +212,7 @@ for (i in 1:4) {
 datasets = list(all_region_mhhinc_weekly_localcor, urban_region_mhhinc_weekly_localcor)
 df_names = c("all_","urban_")
 
-# Predictor: (1) correlation length & (2) log(local correlation)
+# Predictor: (1) correlation length & (2) local correlation
 predictor = c("r_0_50")
 pred_names = c("localcor")
 
@@ -264,25 +267,29 @@ stargazer(
 ## Check conditions of Normality of Residuals, Homoskedasticity,Linearity , No Perfect Multicollinearity, Independence of Residuals
 
 ```{r}
-lm_model = lm_models[[2]]
+for (i in 1:length(lm_models)) {
+lm_model = lm_models[[i]]
 
 # 1. Linearity Check (Visual Inspection)
 plot(residuals(lm_model) ~ fitted(lm_model))
 
 # 2. Independence Check
 # Durbin-Watson test
-durbinWatsonTest(lm_model)
+print(durbinWatsonTest(lm_model)[3])
+
 
 # 3. Homoscedasticity Check
 # Breusch-Pagan test for Heteroscedasticity
-bptest(lm_model)
+print(bptest(lm_model)$p.value)
 
 # 4. Normality of Residuals Check (Visual Inspection)
 hist(residuals(lm_model), main = "Histogram of Residuals")
-
+}
 # 5. No Perfect Multicollinearity Check
 # Variance Inflation Factors (VIF)
 vif(lm(log(next_week_marginal_cases) ~  r_0_50 + factor(region) + factor(mhhinc_tiers) , data = all_region_mhhinc_weekly_localcor))
+
+# Heteroskedasticity in the urban model --> use robust standard errors
 ```
 
 
@@ -291,16 +298,29 @@ vif(lm(log(next_week_marginal_cases) ~  r_0_50 + factor(region) + factor(mhhinc_
 
 ```{r}
 # Create function that prints interpretation of coefficients
-print_interpretation <- function(coef, wave= "every wave",region= "whole US", tier_descr, significant=TRUE, pred = predictor[2], county="all counties") {
+
+print_interpretation <- function(coef, wave_val = "every wave",region_val = "whole US", tier_descr_val = "are disregarded", significant=TRUE, pred = "r_0_50", county="all counties", df=weekly_spatial_metrics_waves) {
   if (!is.na(coef) && isTRUE(significant)) {
-    if (pred == predictor[1]) {
-      factor_value = 254.5
-      pred_type = "correlation length (254.5 km)"
+    
+    # Prep the data frame to calculate appropriate sd
+    if (wave_val !="every wave") {
+    df = filter(df, wave == as.numeric(gsub("\\D", "", wave_val))) }
+    if (region_val !="whole US") {
+    df = filter(df, region == region_val)}
+    if (tier_descr_val != "are disregarded") {
+    df = filter(df, tier_descr == tier_descr_val)}
+
+    # Calculate sd units
+    if (pred == "cor_lengths") {
+      factor_value = round(sd(df$cor_lengths, na.rm = TRUE),2)
+      pred_type = paste("correlation length (",factor_value ," km)",sep="")
     } else {
-      factor_value = 0.19
-      pred_type = "local correlation (0.19)"
+      factor_value = round(sd(df$r_0_50, na.rm = TRUE),2)
+      pred_type = paste("local correlation (",factor_value,")",sep="")
     }
-    cat("- For", county,"across", wave, "in the", region, "where the median household income tiers", tier_descr, "\n")
+    
+    # To Print
+    cat("- For", county,"across", wave_val, "in the", region_val, "where the median household income tiers", tier_descr_val, "\n")
     cat("a 1 sd increase in ", pred_type," corresponds to a ", 
         round(coef * factor_value * 100, 2), "% increase in cases in the following week. Significant? ", significant, "\n", sep = "")
   }
@@ -331,70 +351,80 @@ is_significant <- function(coef, se, threshold = 2.576) {
 
 ## Print non-NA Significant Results
 
+
 ```{r}
-lm_model = lm_models[[2]]
-
-# Get stats
-coefficients <- coef(lm_model)
-coef_names <- names(coef(lm_model))
-se <- summary(lm_model)$coefficients[, "Std. Error"]
-se_named <- rep(NA, length(coef_names))
-se_named[names(se)] <- se
-st_errors <- se_named[coef_names]
-
-# Initialize values
-regions <- c("Northeast", "South", "West", "Midwest")
-tier_diff <- c("same_tier", "tier_diff_1", "tier_diff_2", "tier_diff_3")
-tier_descr <- c("are the same", "differ by 1", "differ by 2", "differ by 3")
-full_coef = c()
-significant = c()
-i=1
-
 # Iterate over Regions and Tier diff dummies
-for (r in 1:length(regions)) {
-  region <- regions[r]
-  for (m in 1:length(tier_diff)) {
-    tierdiff <- tier_diff[m]
-    if (region == "Midwest") {
-      partial_interaction_r <- 0
-      se_partial_r <- 0
-    } else {
-      partial_interaction_r <- coefficients[(8 + r)]
-      se_partial_r <- st_errors[(8 + r)]
-    }
-    if (tierdiff == "tier_diff_3") {
-      partial_interaction_m <- 0
-      se_partial_m <- 0
-    } else {
-      partial_interaction_m <- coefficients[(4*(m+2))]
-      se_partial_m <- st_errors[(4*(m+2))]
-    } 
-    if (tierdiff != "tier_diff_3" & region != "Midwest") {
-      full_interaction_rm <- coefficients[paste0("r_0_50:factor(region)", region, ":", tierdiff)]
-      se_full_rm <- st_errors[paste0("r_0_50:factor(region)", region, ":", tierdiff)]
-    } else {
-      full_interaction_rm <- 0
-      se_full_rm <- 0
-    }
-    
-    # Calculate total standard error
-    se_total <- sqrt(se_partial_r^2 + se_partial_m^2 + se_full_rm^2 + st_errors[2]^2)
+for (x in 1:length(lm_models)) {
+  lm_model <- lm_models[[x]]
   
-    # Store coefficient information
-    interaction <- partial_interaction_r + partial_interaction_m + full_interaction_rm
-    full_coef[i] = save_coefficient(interaction) 
-    
-    # Print interpretation and significance
-    significant[i] <- is_significant(as.numeric(full_coef[i]), as.numeric((se_total)))
-    print_interpretation(full_coef[i], wave= "every wave",region, tier_descr[m], significant[i], pred = "local_cor", county="all counties")
-    i <- i + 1
+  if (x == 1) {
+    county <- "all counties"
+    df = all_region_mhhinc_weekly_localcor
+  } else {
+    county <- "urban counties"
+    df = urban_region_mhhinc_weekly_localcor
+  }
+  
+  # Get stats
+  coefficients <- coef(lm_model)
+  coef_names <- names(coef(lm_model))
+  se <- sqrt(diag(vcovHC(lm_model)))
+  se_named <- rep(NA, length(coef_names))
+  se_named[names(se)] <- se
+  st_errors <- se_named[coef_names]
+  
+  # Initialize values
+  regions <- c("Northeast", "South", "West", "Midwest")
+  tier_diff <- c("same_tier", "tier_diff_1", "tier_diff_2", "tier_diff_3")
+  tier_descr <- c("are the same", "differ by 1", "differ by 2", "differ by 3")
+  full_coef <- c()
+  significant <- c()
+  i <- 1
+  
+  # Iterate over Regions and Tier diff dummies
+  for (r in 1:length(regions)) {
+    region <- regions[r]
+    for (m in 1:length(tier_diff)) {
+      tierdiff <- tier_diff[m]
+      if (region == "Midwest") {
+        partial_interaction_r <- 0
+        se_partial_r <- 0
+      } else {
+        partial_interaction_r <- coefficients[(8 + r)]
+        se_partial_r <- st_errors[(8 + r)]
+      }
+      if (tierdiff == "tier_diff_3") {
+        partial_interaction_m <- 0
+        se_partial_m <- 0
+      } else {
+        partial_interaction_m <- coefficients[(4*(m+2))]
+        se_partial_m <- st_errors[(4*(m+2))]
+      } 
+      if (tierdiff != "tier_diff_3" & region != "Midwest") {
+        full_interaction_rm <- coefficients[paste0("r_0_50:factor(region)", region, ":", tierdiff)]
+        se_full_rm <- st_errors[paste0("r_0_50:factor(region)", region, ":", tierdiff)]
+      } else {
+        full_interaction_rm <- 0
+        se_full_rm <- 0
+      }
+      
+      # Calculate total standard error
+      se_total <- sqrt(se_partial_r^2 + se_partial_m^2 + se_full_rm^2 + st_errors[2]^2)
+      
+      # Store coefficient information
+      interaction <- partial_interaction_r + partial_interaction_m + full_interaction_rm
+      full_coef[i] <- save_coefficient(interaction) 
+      
+      # Print interpretation and significance
+      significant[i] <- is_significant(as.numeric(full_coef[i]), as.numeric((se_total)))
+      print_interpretation(full_coef[i], wave= "every wave",region, tier_descr[m], significant[i], pred = "local_cor", county, df)
+      i <- i + 1
+    }
   }
 }
 ```
 
-All results in the South & Midwest are significant. Higher effects among counties similar in mhhinc tier.
-
-Only significant result form Urban county df: Midwest tiers differ by 1, 15.24% increase
+Regional and equality level effects are significant in the South and Midwest across every wave. Slightly stronger effects in the South than the midwest among counties of similar median household income tier. Effects are not as discernible among Urban counties. We don't have enough data to calculate correlation length but local correlation is an effective metric here.
 
 # Lauren: Wave Models (2 data sets, 4 models, 2 tables, 2 models/table)
 *hey lauren! the simple/general models are done, so it's just the wave dummy models for cor_length / local_cor and urban / all counties -e*
@@ -408,8 +438,8 @@ Only significant result form Urban county df: Midwest tiers differ by 1, 15.24% 
 datasets = list(all_regional_weekly_spatial_metrics, urban_regional_weekly_spatial_metrics)
 df_names = c("all","urban")
 
-# Predictor: (1) correlation length & (2) log(local correlation)
-predictor = c("cor_lengths", "log(r_0_50)")
+# Predictor: (1) correlation length & (2) local correlation
+predictor = c("cor_lengths", "r_0_50") #unlog local cor
 predictor_names = c("corlengths","localcor")
 
 # Covariates (1) mhhinc & (2) mhhinc + wave
@@ -654,6 +684,7 @@ cat("a 10 % increase in local correlation corresponds to a ",
 
 ```{r}
 for (lm_model in region_lm_models) {
+  
 # 1. Linearity Check (Visual Inspection)
 plot(residuals(lm_model) ~ fitted(lm_model))
 
@@ -676,10 +707,11 @@ vif(lm(log(next_week_marginal_cases) ~  cor_lengths + factor(wave) + factor(regi
 
 
 names(region_lm_models)
+
 # Conditions not passed:
-## Heteroskedastic in all_corlengths_wave_region, all_corlengths_region, all_localcor_region,all_localcor_wave_region,  urban_corlengths_region, urban_localcor_region
-## Non-linearity in all_localcor_wave_region, all_localcor_region, urban_corlengths_region, urban_localcor_wave_region, urban_localcor_region
-## solutions --> robust standard errors? don't trust low significance
+## Heteroskedastic in all_corlengths_wave_region, all_corlengths_region, urban_corlengths_region, urban_localcor_region
+## Non-linearity in urban_localcor_region
+## solutions --> use robust standard errors, reject a 99% level for strong results
 ```
 
 ## Print non-NA Significant Results
@@ -688,7 +720,7 @@ names(region_lm_models)
 # FUNCTIONS DEFINED IN E's Section
 
 # Initialize values
-predictor <- c("cor_lengths","log(r_0_50)")
+predictor <- c("cor_lengths","r_0_50")
 waves <- c("wave 1","wave 2", "wave 3")
 regions <- c("Northeast", "Midwest", "South", "West")
 full_coef = c()
@@ -705,16 +737,23 @@ for (model in 1:length(region_lm_models)) {
   lm_model = region_lm_models[[model]]
   coefficients <- coef(lm_model)
   coef_names <- names(coef(lm_model))
-  se <- summary(lm_model)$coefficients[, "Std. Error"]
+  
+   # Get stats
+  coefficients <- coef(lm_model)
+  coef_names <- names(coef(lm_model))
+  # se <- summary(lm_model)$coefficients[, "Std. Error"] use robust SE's
+  se <- sqrt(diag(vcovHC(lm_model)))
   se_named <- rep(NA, length(coef_names))
   se_named[names(se)] <- se
   st_errors <- se_named[coef_names]
   
   # Based on model, decide if urban or all county df
   if (model <=4) {
-    county = "all counties"}
+    county = "all counties"
+    df = all_regional_weekly_spatial_metrics}
   else {
-    county = "urban counties"}
+    county = "urban counties"
+    df = urban_regional_weekly_spatial_metrics}
   
   # Based on model, choose cor_length or local_cor as predictor
   if (model %in% c(1,2,5,6)) {pred = predictor[1]}
@@ -736,7 +775,7 @@ for (model in 1:length(region_lm_models)) {
     
       # Print interpretation and significance
       significant1[j] <- is_significant(as.numeric(full_coef1[j]), as.numeric((se_total)))
-      print_interpretation(full_coef1[j], wave, region, "are disregarded", significant1[j], pred, county)}}
+      print_interpretation(full_coef1[j], wave, region, "are disregarded", significant1[j], pred, county, df)}}
   
   # Wave dummies with mhhinc tier dummies
   else {
@@ -777,13 +816,13 @@ for (model in 1:length(region_lm_models)) {
     
     # Print interpretation and significance
     significant[i] <- is_significant(as.numeric(full_coef[i]), as.numeric((se_total)))
-    print_interpretation(full_coef[i], wave, region, "are disregarded", significant[i], pred, county)
+    print_interpretation(full_coef[i], wave, region, "are disregarded", significant[i], pred, county, df)
     i <- i + 1
     }}}
 }
 ```
 
-Urban counties in the West in wave 1 and Northeast counties in wave 1 experienced extremeley strong spatial spread. Regional effects differed across the time period, but especially so in wave 1.  
+Regional effects are strong in all regions, but weaker in the Northeast. Strongest results are in the West. Significant results across all waves, particularly strong regional effects in wave 1. Effects are not as discernible among Urban counties. Correlation length is better for predicting covid when discerning regional effects.
 
 # Meichen: MHHINC + Wave Models (2 data sets, 8 models, 4 tables, 2 models/table)
 
@@ -794,8 +833,8 @@ Urban counties in the West in wave 1 and Northeast counties in wave 1 experience
 datasets = list(all_mhhinc_weekly_spatial_metrics, urban_mhhinc_weekly_spatial_metrics)
 df_names = c("all","urban")
 
-# Predictor: (1) correlation length & (2) log(local correlation)
-predictor = c("cor_lengths", "log(r_0_50)")
+# Predictor: (1) correlation length & (2) local correlation
+predictor = c("cor_lengths", "r_0_50") #unlog local cor
 predictor_names = c("corlengths","localcor")
 
 # Covariates (1) mhhinc & (2) mhhinc + wave
@@ -1007,11 +1046,9 @@ hist(residuals(lm_model), main = "Histogram of Residuals")
 vif(lm(log(next_week_marginal_cases) ~  cor_lengths + factor(wave) + factor(mhhinc_tier) , data = all_mhhinc_weekly_spatial_metrics))
 vif(lm(log(next_week_marginal_cases) ~  cor_lengths + factor(wave) + factor(mhhinc_tier) , data = urban_mhhinc_weekly_spatial_metrics))
 
-
 # Conditions not passed:
-## Heteroskedasticity in all_localcor_mhhinc, urban_localcor_wave_mhhinc, urban_localcor_mhhinc
-## Non-linearity in all_localcor_wave_mhhinc, all_localcor_mhhinc, urban_localcor_wave_mhhinc, urban_localcor_mhhinc
-## These are the local correlation models with mhhinc
+## Heteroskedasticity in all_localcor_mhhinc and urban_localcor_mhhinc
+## Non-linearity in urban_localcor_wave_mhhinc, urban_localcor_mhhinc
 ```
 
 ## Print non-NA Significant Results
@@ -1020,7 +1057,7 @@ vif(lm(log(next_week_marginal_cases) ~  cor_lengths + factor(wave) + factor(mhhi
 # FUNCTIONS DEFINED IN E's Section
 
 # Initialize values
-predictor <- c("cor_lengths","log(r_0_50)")
+predictor <- c("cor_lengths","r_0_50")
 waves <- c("wave 1","wave 2", "wave 3")
 tier_diff <- c("same_tier", "tier_diff_1", "tier_diff_2", "tier_diff_3")
 tier_descr <- c("are the same", "differ by 1", "differ by 2", "differ by 3")
@@ -1038,16 +1075,19 @@ for (model in 1:length(mhhinc_lm_models)) {
   lm_model = mhhinc_lm_models[[model]]
   coefficients <- coef(lm_model)
   coef_names <- names(coef(lm_model))
-  se <- summary(lm_model)$coefficients[, "Std. Error"]
+  # se <- summary(lm_model)$coefficients[, "Std. Error"] use robust SE's
+  se <- sqrt(diag(vcovHC(lm_model)))
   se_named <- rep(NA, length(coef_names))
   se_named[names(se)] <- se
   st_errors <- se_named[coef_names]
   
   # Based on model, decide if urban or all county df
   if (model <=4) {
-    county = "all counties"}
+    county = "all counties"
+    df = all_mhhinc_weekly_spatial_metrics}
   else {
-    county = "urban counties"}
+    county = "urban counties"
+    df = urban_mhhinc_weekly_spatial_metrics}
   
   # Based on model, choose cor_length or local_cor as predictor
   if (model %in% c(1,2,5,6)) {pred = predictor[1]}
@@ -1069,7 +1109,7 @@ for (model in 1:length(mhhinc_lm_models)) {
     
       # Print interpretation and significance
       significant1[j] <- is_significant(as.numeric(full_coef1[j]), as.numeric((se_total)))
-      print_interpretation(full_coef1[j], wave, region="whole US", tier_descr[m], significant1[j], pred, county)}}
+      print_interpretation(full_coef1[j], wave, region="whole US", tier_descr[m], significant1[j], pred, county, df)}}
   
   # Wave dummies with mhhinc tier dummies
   else {
@@ -1110,14 +1150,16 @@ for (model in 1:length(mhhinc_lm_models)) {
     
     # Print interpretation and significance
     significant[i] <- is_significant(as.numeric(full_coef[i]), as.numeric((se_total)))
-    print_interpretation(full_coef[i], wave, region="whole US", tier_descr[m], significant[i], pred, county)
+    print_interpretation(full_coef[i], wave, region="whole US", tier_descr[m], significant[i], pred, county, df)
     i <- i + 1
     }}}
 }
 ```
 
+Significant differential effects among "equality level." Spread is greater among counties of similar socioeconomic leve. Strong results across every wave but especially in wave 3. Effects are not as discernible among Urban counties. Both correlation length and local correlation are effective metrics for predicting covid to discern socioeconimic effects.
 
-Significant differential effects among "equality level" - across every wave but especially in wave 3. Spread is greater among counties of similar socioeconomic level (considering all counties).
+
+
 
 # \########################################## Old Stuff (Do new stuff above this)
 
