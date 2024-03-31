@@ -459,7 +459,6 @@ for (d in 1:length(datasets)) {
     wave_lm_models[[model_name]] <- lm_model
   }
 }
-
 names(wave_lm_models)
 ```
 
@@ -530,7 +529,7 @@ print_significant_wave_interpretations <- function(models) {
     model <- models[[i]]
     coefficients <- summary(model)$coefficients
     
-    # Print significant wave coefficients
+    # Print significant wave coefficients at 0.05 significance level
     for (wave in 2:3) {
       coef_name <- paste("factor(wave)", wave, sep="")
       if (coef_name %in% rownames(coefficients)) {
