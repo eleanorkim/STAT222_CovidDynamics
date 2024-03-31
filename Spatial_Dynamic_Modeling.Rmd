@@ -129,7 +129,7 @@ for (d in 1:length(datasets)) {
       lm_model <- lm(lm_formula, data = df)
       
       # Generate a name for the model object
-      model_name <- paste(df_names[d],"_", predictor_names[p], sep = "")
+      model_name <- paste(df_names[d],"_", pred_names[p], sep = "")
       
       # Save the model to the list
       simple_lm_models[[model_name]] <- lm_model
@@ -351,7 +351,6 @@ is_significant <- function(coef, se, threshold = 2.576) {
 
 ## Print non-NA Significant Results
 
-
 ```{r}
 # Iterate over Regions and Tier diff dummies
 for (x in 1:length(lm_models)) {
@@ -427,7 +426,130 @@ for (x in 1:length(lm_models)) {
 Regional and equality level effects are significant in the South and Midwest across every wave. Slightly stronger effects in the South than the midwest among counties of similar median household income tier. Effects are not as discernible among Urban counties. We don't have enough data to calculate correlation length but local correlation is an effective metric here.
 
 # Lauren: Wave Models (2 data sets, 4 models, 2 tables, 2 models/table)
-*hey lauren! the simple/general models are done, so it's just the wave dummy models for cor_length / local_cor and urban / all counties -e*
+
+## Prepare Model Combinations
+```{r}
+# Data sets: (1) all counties & (2) urban counties
+datasets = list(all_weekly_spatial_metrics_waves, urban_weekly_spatial_metrics_waves)
+df_names = c("all","urban")
+
+# Predictor: (1) correlation length & (2) log(local correlation)
+predictor = c("cor_lengths", "r_0_50")
+pred_names = c("corlength","localcor")
+```
+
+## Generate Models
+```{r}
+wave_lm_models <- list()
+
+for (d in 1:length(datasets)) {
+  df = datasets[[d]]
+  for (p in 1:length(predictor)) {
+    # Create the formula by including wave_1 and wave_2 as covariates
+    lm_formula <- as.formula(paste("log(next_week_marginal_cases) ~", predictor[p], "+ factor(wave)"))
+    #lm_formula <- as.formula(paste("log(next_week_marginal_cases) ~", predictor[p], "+ wave_1 + wave_2"))
+    
+    # Fit the linear model
+    lm_model <- lm(lm_formula, data = df)
+    
+    # Generate a name for the model object
+    model_name <- paste(df_names[d], "_", pred_names[p], "_waves", sep = "")
+    
+    # Save the model to the list
+    wave_lm_models[[model_name]] <- lm_model
+  }
+}
+
+names(wave_lm_models)
+```
+
+## View Model Summaries
+```{r}
+for (m in 1:length(wave_lm_models)) {
+  print(summary(wave_lm_models[[m]]))
+}
+```
+
+```{r, warning = FALSE}
+# stargazer table for all_corlengths_region and urban_corlengths_region
+# (1) is all
+# (2) is urban
+stargazer(
+  c(wave_lm_models[1], wave_lm_models[3]),
+  type = "text", 
+  title = "Regression of Covid Cases on Correlation Length with Waves"
+)
+```
+
+```{r, warning = FALSE}
+# all_localcor_wave_region and urban_localcor_wave_region
+# (1) is all
+# (2) is urban
+stargazer(
+  c(wave_lm_models[2], wave_lm_models[4]),
+  type = 'text', 
+  title = "Regression of Covid Cases on Local Correlation with Waves"
+)
+```
+
+```{r}
+units = c(round(sd(urban_weekly_spatial_metrics_waves$cor_lengths, na.rm = TRUE),2), round( sd(urban_weekly_spatial_metrics_waves$r_0_50) ,2))
+var = c("correlation length","local correlation")
+for (i in 1:4) {
+  adj_i = 2-i%%2
+  print(paste("a 1 sd increase in ", var[adj_i]," (",units[adj_i], ") corresponds to a ", round(wave_lm_models[[i]]$coefficients[2]*units[adj_i]*100,2),"% change in cases in the following week across ", df_names[(i>2)+1]," counties", sep=""))}
+```
+
+## Check conditions of Normality of Residuals, Homoskedasticity,Linearity , No Perfect Multicollinearity, Independence of Residuals
+
+```{r}
+for (i in 1:length(wave_lm_models)) {
+  lm_model = wave_lm_models[[i]]
+  
+  # Linearity Check (Visual Inspection)
+  plot(residuals(lm_model) ~ fitted(lm_model))
+  
+  # 2. Independence Check
+  # Durbin-Watson test
+  durbinWatsonTest(lm_model)
+  
+  # 3. Homoscedasticity Check (Visual Inspection)
+  # Breusch-Pagan test for Heteroscedasticity
+  bptest(lm_model)
+  
+  # 4. Normality of Residuals Check
+  # Histogram of residuals
+  hist(residuals(lm_model), main = "Histogram of Residuals")
+}
+```
+
+## Print Significant Results
+```{r}
+print_significant_wave_interpretations <- function(models) {
+  for (i in 1:length(models)) {
+    model <- models[[i]]
+    coefficients <- summary(model)$coefficients
+    
+    # Print significant wave coefficients
+    for (wave in 2:3) {
+      coef_name <- paste("factor(wave)", wave, sep="")
+      if (coef_name %in% rownames(coefficients)) {
+        coef_val <- coefficients[coef_name, "Estimate"]
+        p_value <- coefficients[coef_name, "Pr(>|t|)"]
+        
+        if (p_value < 0.05) {  
+          percent_change <- round(coef_val * 100, 2)
+          
+          cat("- Among all", ifelse(i <= 2, "all", "urban"), "counties in wave", wave, "\n")
+          cat("a 1 unit increase in wave ", wave, " corresponds to a ", 
+              percent_change, "% change in cases in the following week. Significant? TRUE\n\n", sep = "")
+        }
+      }
+    }
+  }
+}
+print_significant_wave_interpretations(wave_lm_models)
+```
 
 # Aarushi: Region + Wave Models (2 data sets, 8 models, 4 tables, 2 models/table)
 
