@@ -337,7 +337,7 @@ save_coefficient <- function(interaction) {
 }
 
 # Create function to calculate significance of coefficient based on t-statistic
-is_significant <- function(coef, se, threshold = 2.576) {
+is_significant <- function(coef, se, threshold = 1.96) { #2.576
   if (!is.na(coef) && !is.na(se)) {
     # Calculate t-statistic
     t_stat <- coef / se
@@ -441,25 +441,29 @@ pred_names = c("corlength","localcor")
 ## Generate Models
 ```{r}
 wave_lm_models <- list()
+wave_lm_models_alt <- list()
 
 for (d in 1:length(datasets)) {
   df = datasets[[d]]
   for (p in 1:length(predictor)) {
     # Create the formula by including wave_1 and wave_2 as covariates
-    lm_formula <- as.formula(paste("log(next_week_marginal_cases) ~", predictor[p], "+ factor(wave)"))
-    #lm_formula <- as.formula(paste("log(next_week_marginal_cases) ~", predictor[p], "+ wave_1 + wave_2"))
+    lm_formula <- as.formula(paste("log(next_week_marginal_cases) ~", paste(predictor[p],"*factor(wave)")))
+    lm_formula_alt <- as.formula(paste("log(next_week_marginal_cases) ~", paste(predictor[p],"*wave_1 +"), paste(predictor[p],"*wave_2")))
     
     # Fit the linear model
     lm_model <- lm(lm_formula, data = df)
+    lm_model_alt <- lm(lm_formula_alt, data = df)
     
     # Generate a name for the model object
     model_name <- paste(df_names[d], "_", pred_names[p], "_waves", sep = "")
     
     # Save the model to the list
     wave_lm_models[[model_name]] <- lm_model
+    wave_lm_models_alt[[model_name]] <- lm_model_alt
+
   }
 }
-names(wave_lm_models)
+names(wave_lm_models_alt)
 ```
 
 ## View Model Summaries
@@ -520,6 +524,8 @@ for (i in 1:length(wave_lm_models)) {
   # Histogram of residuals
   hist(residuals(lm_model), main = "Histogram of Residuals")
 }
+
+# Non-linearity  in all_corlength_waves and urban_localcor_waves
 ```
 
 ## Print Significant Results
@@ -548,6 +554,73 @@ print_significant_wave_interpretations <- function(models) {
   }
 }
 print_significant_wave_interpretations(wave_lm_models)
+```
+
+```{r}
+# FUNCTIONS DEFINED IN E's Section
+
+# Initialize values
+predictor <- c("cor_lengths","r_0_50")
+waves <- c("wave 1","wave 2", "wave 3")
+full_coef = c()
+significant = c()
+i=1
+
+# Iterate over Regions and Wave dummies
+for (model in 1:length(wave_lm_models_alt)) {
+  
+  # Get model stats
+  lm_model = wave_lm_models[[model]]
+  coefficients <- coef(lm_model)
+  coef_names <- names(coef(lm_model))
+  
+  # Get stats
+  # se <- summary(lm_model)$coefficients[, "Std. Error"] use robust SE's
+  se <- sqrt(diag(vcovHC(lm_model)))
+  se_named <- rep(NA, length(coef_names))
+  se_named[names(se)] <- se
+  st_errors <- se_named[coef_names]
+  
+  # Based on model, decide if urban or all county df
+  if (model <=2) {
+    county = "all counties"
+    df = all_weekly_spatial_metrics_waves}
+ else {
+    county = "urban counties"
+    df = urban_weekly_spatial_metrics_waves}
+  
+  # Based on model, choose cor_length or local_cor as predictor
+  if (model %in% c(1,3)) {pred = predictor[1]}
+  else {pred = predictor[2]}
+    
+  # Iterate over each wave model
+  for (w in 1:length(waves)) {
+    wave <- waves[w]
+    if (wave != "wave 1") {
+      full_interaction_w <- coefficients[paste0(pred,":factor(wave)", w)]
+      se_full_w <- st_errors[paste0(pred,":factor(wave)", w)]
+    } else {
+      full_interaction_w <- 0
+      se_full_w <- 0}
+    # Calculate total standard error
+    se_total <- sqrt(se_full_w^2+ st_errors[2]^2)
+    # Store coefficient information
+    interaction <- full_interaction_w
+    
+    # Store coefficient
+    full_coef[i] <- save_coefficient(interaction)
+    
+    # Print interpretation and significance
+    significant[i] <- is_significant(as.numeric(full_coef[i]), as.numeric(se_total))
+    print_interpretation(full_coef[i], wave, "whole US", "are disregarded", significant[i], pred, county, df)
+    i <- i + 1
+    }}
+
+summary(wave_lm_models[[1]])
+```
+
+```{r}
+summary(lm(log(next_week_marginal_cases) ~ cor_lengths*factor(wave), all_weekly_spatial_metrics_waves))
 ```
 
 # Aarushi: Region + Wave Models (2 data sets, 8 models, 4 tables, 2 models/table)
@@ -860,8 +933,6 @@ for (model in 1:length(region_lm_models)) {
   coef_names <- names(coef(lm_model))
   
    # Get stats
-  coefficients <- coef(lm_model)
-  coef_names <- names(coef(lm_model))
   # se <- summary(lm_model)$coefficients[, "Std. Error"] use robust SE's
   se <- sqrt(diag(vcovHC(lm_model)))
   se_named <- rep(NA, length(coef_names))
@@ -928,7 +999,7 @@ for (model in 1:length(region_lm_models)) {
         se_full_wr <- 0
       }
     # Calculate total standard error
-    se_total <- sqrt(se_partial_w^2 + se_partial_w^2 + se_full_wr^2 + st_errors[2]^2)
+    se_total <- sqrt(se_partial_w^2 + se_partial_r^2 + se_full_wr^2 + st_errors[2]^2)
     # Store coefficient information
     interaction <- partial_interaction_w + partial_interaction_r + full_interaction_wm
     
@@ -936,7 +1007,7 @@ for (model in 1:length(region_lm_models)) {
     full_coef[i] = save_coefficient(interaction)
     
     # Print interpretation and significance
-    significant[i] <- is_significant(as.numeric(full_coef[i]), as.numeric((se_total)))
+    significant[i] <- is_significant(as.numeric(full_coef[i]), as.numeric(se_total))
     print_interpretation(full_coef[i], wave, region, "are disregarded", significant[i], pred, county, df)
     i <- i + 1
     }}}
@@ -1262,7 +1333,7 @@ for (model in 1:length(mhhinc_lm_models)) {
         se_full_wm <- 0
       }
     # Calculate total standard error
-    se_total <- sqrt(se_partial_w^2 + se_partial_w^2 + se_full_wm^2 + st_errors[2]^2)
+    se_total <- sqrt(se_partial_w^2 + se_partial_m^2 + se_full_wm^2 + st_errors[2]^2)
     # Store coefficient information
     interaction <- partial_interaction_w + partial_interaction_m + full_interaction_wm
     
