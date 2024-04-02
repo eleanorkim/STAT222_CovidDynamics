@@ -99,6 +99,23 @@ poverty = read_xlsx("Poverty_and_MedianHHIncome_Tiers.xlsx")
 county_df <- merge(county_df, poverty, by.x = "fips", by.y = "FIPS_Code", all.x = TRUE)
 ```
 
+```{r}
+# add mask usage tiers to county_df
+mask = read.csv("mask-use-by-county.csv")
+mask$COUNTYFP <- sprintf("%05d", mask$COUNTYFP)
+summary(mask$ALWAYS)
+mask <- mask %>%
+  mutate(mask_usage = case_when(
+    ALWAYS < 0.4 ~ 1,
+    ALWAYS >= 0.4 & ALWAYS < 0.5 ~ 2,
+    ALWAYS >= 0.5 & ALWAYS < 0.6 ~ 3,
+    ALWAYS >= 0.6 ~ 4
+  ))
+table(mask$mask_usage)
+county_df <- merge(county_df, mask, by.x = "fips", by.y = "COUNTYFP", all.x = TRUE)
+head(county_df)
+```
+
 ## Calculate pairwise distances between counties
 
 ```{r}
@@ -133,6 +150,7 @@ pairwise_counties = filter(merged_data, distance_km<=1000)
 # Inspect data
 nrow(pairwise_counties) # 1831972
 head(pairwise_counties)
+
 ```
 
 
@@ -326,10 +344,13 @@ county_week <- county_week %>%
 # add poverty tiers to county_week
 county_week<- merge(county_week, poverty, by.x = "fips", by.y = "FIPS_Code", all.x = TRUE)
 
+# add mask tiers to county_week
+county_week<- merge(county_week, mask, by.x = "fips", by.y = "COUNTYFP", all.x = TRUE)
+
 nrow(county_week) # 357104
 head(county_week)
 county_week$county_name <- paste(county_week$county, "County", sep = " ")
-write.csv(county_week, "county_week.csv")
+# write.csv(county_week, "county_week.csv")
 ```
 
 Output: county_week
@@ -787,13 +808,102 @@ for (select_tier1 in 1:4) {
 
 
 
+
+## Mask Subsets
+
+```{r}
+# Initialize lists to store results
+mask_list_Cr <- vector("list", length = 10)
+mask_cor_lengths <- vector("list", length = 10)
+
+# up until week 5 we have < 22 observations
+week_start <- 9
+week_end <- 165
+
+# Initialize counter for indexing
+counter <- 1
+
+# Iterate over select_tier1
+for (select_tier1 in 1:4) {
+  # Iterate over select_tier2
+  for (select_tier2 in select_tier1:4) {
+    # Subset pairwise_counties and county_week based on select_tier1 and select_tier2
+    subset_pairwise_counties <- filter(pairwise_counties, mask_usage_1 == select_tier1 & mask_usage_2 == select_tier2)
+    subset_county_week <- filter(county_week, mask_usage == select_tier1 | mask_usage == select_tier2)
+    
+    # Initialize vectors
+    list_Cr <- vector("list", length = week_end - week_start + 1)
+    cor_lengths <- numeric(week_end - week_start + 1)
+    
+    # Iterate over weeks
+    for (w in week_start:week_end) {
+      # Subset covid data by fixing week T
+      county_week_T <- filter(subset_county_week, week == w)
+      
+      # Merge data frames based on fips1
+      counties_covid_1 <- merge(subset_pairwise_counties, county_week_T[, c("fips", "X_T")], by.x = "fips1", by.y = "fips", all.x = TRUE, suffixes = c("", "_1"))
+      names(counties_covid_1)[names(counties_covid_1) == "X_T"] <- "X_T_1"
+      
+      # Merge data frames based on fips2
+      covid_counties_1_2 <- merge(counties_covid_1, county_week_T[, c("fips", "X_T")], by.x = "fips2", by.y = "fips", all.x = TRUE, suffixes = c("", "_2"))
+      names(covid_counties_1_2)[names(covid_counties_1_2) == "X_T"] <- "X_T_2"
+      
+      # Add T column
+      covid_counties_1_2$T <- rep(w, nrow(covid_counties_1_2))
+      
+      # Remove rows where X_T is NA (no covid data for county pair)
+      covid_counties_1_2 <- covid_counties_1_2[complete.cases(covid_counties_1_2$X_T_1) & complete.cases(covid_counties_1_2$X_T_2), ]
+      
+      # Initialize empty vectors to store results
+      n <- length(r_upper)
+      C_r_T <- numeric(n)
+      significant <- numeric(n)
+      
+      # For loop to calculate spatial correlation for each unique r_i, a distance interval between counties
+      for (i in 1:n) {
+        X_T_1_r <- covid_counties_1_2$X_T_1[covid_counties_1_2$r_i == i]
+        X_T_2_r <- covid_counties_1_2$X_T_2[covid_counties_1_2$r_i == i]
+        
+        # we need enough observations in data to run correlation test
+        if (length(X_T_1_r) > 3  && length(X_T_2_r) > 3) {
+          C_r_T[i] <- cor(X_T_1_r, X_T_2_r)
+          significant[i] <- (cor.test(X_T_1_r, X_T_2_r)$p.value < 0.01)
+        } else {
+          C_r_T[i] <- NA
+          significant[i] <- FALSE
+        }
+      }
+      
+      # Calculate correlation length
+      mid_point_intervals <- (r_upper + r_lower) / 2
+      first_zero <- which(significant == 0)[1]
+      xi <- mid_point_intervals[first_zero]
+      
+      # Save to vector/list
+      cor_lengths[w - week_start + 1] <- xi
+      list_Cr[[w - week_start + 1]] <- C_r_T
+    }
+    
+    # Save results to list
+   mask_list_Cr[[counter]] <- list_Cr
+    mask_cor_lengths[[counter]] <- cor_lengths
+    
+    # Increment counter
+    counter <- counter + 1
+  }
+}
+length(mask_list_Cr[[1]])
+length(mask_cor_lengths)
+```
+
+
 ## Read in Spatial Metrics Data
 
 ```{r}
 # the above loop takes a really long time to iterate through all weeks so we save and read in
 
-
-saveRDS(region_mhhinc_list_localcor, "urban_region_mhhinc_list_localcor.rds")
+saveRDS(mask_list_Cr, "mask_list_Cr.rds")
+saveRDS(mask_cor_lengths, "mask_correlation_lengths.rds")
 
 # read in full data of spatial metrics from weeks 6-165
 list_Cr <- readRDS("all_Cr.rds")
@@ -844,6 +954,9 @@ cor_lengths_region_mhhinc <- readRDS("region_mhhinc_correlation_lengths.rds")
 localcor_region_mhhinc <- readRDS("region_mhhinc_list_localcor.rds")
 urban_localcor_region_mhhinc <- readRDS("urban_region_mhhinc_list_localcor.rds")
 
+# mask
+Cr_mask <- readRDS("mask_list_Cr.rds")
+cor_lengths_mask <- readRDS("mask_correlation_lengths.rds")
 ```
 
 ## Create Dataframe for the Spatial Metrics for the Subset of Weeks
@@ -1334,6 +1447,113 @@ fix <- fix %>%
 # write.csv(fix, "mhhinc_weekly_spatial_metrics.csv")
 
 ```
+
+
+### Masks Weekly Spatial Metrics
+
+```{r}
+# For Mask "Always" Usage
+n = length(Cr_mask[[1]])
+
+# initialize data frame
+mask_weekly_spatial_metrics <- data.frame(matrix(NA, nrow = 0, ncol = 54))
+colnames(mask_weekly_spatial_metrics)[1:4] <- c("week_start_date", "total_cases", "marginal_cases", "cor_lengths")
+colnames(mask_weekly_spatial_metrics)[5:52] <- as.character(col_names)
+colnames(mask_weekly_spatial_metrics)[53:54] <- c("next_week_marginal_cases","mask_usage")
+
+# Weekly Spatial Metrics for Regions
+for (r in 1:10) {
+  list_Cr = Cr_mask[[r]]
+  cor_lengths = cor_lengths_mask[[r]]
+  mask_usages = c("1_1","1_2","1_3","1_4","2_2","2_3","2_4","3_3","3_4","4_4")
+  
+  # Create dataframe
+  weekly_spatial_metrics <- data.frame(matrix(NA, nrow = n, ncol = 52))
+  colnames(weekly_spatial_metrics)[1:4] <- c("week_start_date", "total_cases", "marginal_cases", "cor_lengths")
+  colnames(weekly_spatial_metrics)[5:52] <- as.character(col_names)
+  
+  # Fill in first few columns
+  weekly_spatial_metrics[, "week_start_date"] <- date_names
+  weekly_spatial_metrics[, "total_cases"] <- total_cases
+  weekly_spatial_metrics[, "marginal_cases"] <- c(0, diff(weekly_spatial_metrics$total_cases))
+  weekly_spatial_metrics[, "cor_lengths"] <- cor_lengths
+  
+  # Fill the data frame with list_Cr values
+  for (i in seq_along(list_Cr)) {
+    weekly_spatial_metrics[i, 5:52] <- unlist(list_Cr[[i]])
+  }
+  
+  # add next week marginal cases column
+  weekly_spatial_metrics <- weekly_spatial_metrics %>%
+    mutate(next_week_marginal_cases = dplyr::lead(marginal_cases))
+  weekly_spatial_metrics$next_week_marginal_cases[(n-1):n] = c(NA, NA)
+  weekly_spatial_metrics$mask_usage = rep(mask_usages[r], n)
+  mask_weekly_spatial_metrics = rbind(mask_weekly_spatial_metrics, weekly_spatial_metrics)
+}
+```
+
+
+```{r}
+# add mask tier dummies
+mask_weekly_spatial_metrics$mask_11 <- ifelse(mask_weekly_spatial_metrics$mask_usage == "1_1", 1, 0)
+mask_weekly_spatial_metrics$mask_12 <- ifelse(mask_weekly_spatial_metrics$mask_usage == "1_2", 1, 0)
+mask_weekly_spatial_metrics$mask_13 <- ifelse(mask_weekly_spatial_metrics$mask_usage == "1_3", 1, 0)
+mask_weekly_spatial_metrics$mask_14 <- ifelse(mask_weekly_spatial_metrics$mask_usage == "1_4", 1, 0)
+mask_weekly_spatial_metrics$mask_22 <- ifelse(mask_weekly_spatial_metrics$mask_usage == "2_2", 1, 0)
+mask_weekly_spatial_metrics$mask_23 <- ifelse(mask_weekly_spatial_metrics$mask_usage == "2_3", 1, 0)
+mask_weekly_spatial_metrics$mask_24 <- ifelse(mask_weekly_spatial_metrics$mask_usage == "2_4", 1, 0)
+mask_weekly_spatial_metrics$mask_33 <- ifelse(mask_weekly_spatial_metrics$mask_usage == "3_3", 1, 0)
+mask_weekly_spatial_metrics$mask_34 <- ifelse(mask_weekly_spatial_metrics$mask_usage == "3_4", 1, 0)
+mask_weekly_spatial_metrics$mask_44 <- ifelse(mask_weekly_spatial_metrics$mask_usage == "4_4", 1, 0)
+
+# Add wave column
+mask_weekly_spatial_metrics <- mask_weekly_spatial_metrics %>%
+  mutate(
+    wave = case_when(
+      as.Date(week_start_date) >= "2021-12-11" ~ 3,
+      as.Date(week_start_date) >= "2020-12-26" ~ 2,
+      TRUE ~ 1
+    )
+  )
+
+# Add wave dummies
+mask_weekly_spatial_metrics <- mask_weekly_spatial_metrics %>%
+  mutate(
+    wave_1 = as.integer(wave == 1),
+    wave_2 = as.integer(wave == 2)
+  )
+
+# Add mask tier group dummies
+mask_weekly_spatial_metrics$same_usage <- ifelse(mask_weekly_spatial_metrics$mask_usage == "1_1" | 
+       mask_weekly_spatial_metrics$mask_usage == "2_2" |
+       mask_weekly_spatial_metrics$mask_usage == "3_3" |
+       mask_weekly_spatial_metrics$mask_usage == "4_4",
+       1, 0)
+mask_weekly_spatial_metrics$usage_diff_1 <- ifelse(mask_weekly_spatial_metrics$mask_usage == "1_2"|
+       mask_weekly_spatial_metrics$mask_usage == "2_3" |
+       mask_weekly_spatial_metrics$mask_usage == "3_4",
+       1, 0)
+mask_weekly_spatial_metrics$usage_diff_2 <- ifelse(mask_weekly_spatial_metrics$mask_usage == "1_3"|
+       mask_weekly_spatial_metrics$mask_usage == "2_4",
+       1, 0)
+mask_weekly_spatial_metrics$usage_diff_3 <- ifelse(mask_weekly_spatial_metrics$mask_usage == "1_4",
+       1, 0)
+# Define the variable based on tier difference
+mask_weekly_spatial_metrics <- mask_weekly_spatial_metrics %>%
+  mutate(mask_use_descr = case_when(
+    same_usage == 1 ~ "are the same",
+    usage_diff_1 == 1 ~ "differ by 1",
+    usage_diff_2 == 1 ~ "differ by 2",
+    usage_diff_3 == 1 ~ "differ by 3",
+    TRUE ~ NA_character_  # Handle other cases (if any)
+  ))
+
+all_mask_weekly_spatial_metrics = mask_weekly_spatial_metrics
+# save to cs
+write.csv(all_mask_weekly_spatial_metrics, "all_mask_weekly_spatial_metrics.csv")
+```
+
+
 
 ### Panel Data
 

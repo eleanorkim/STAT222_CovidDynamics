@@ -20,7 +20,7 @@ library(stargazer)
 library(car)
 ```
 
-# Read in 7 Datasets
+# Read in 9 Datasets
 
 ## All county data + Urban county data with Wave dummies
 
@@ -77,12 +77,9 @@ correlation length, income pair tiers (4 choose 2) dummies, income tier
 differences (same tier, difference of 1, difference of 2, difference of
 3)
 
-## All county data with Region + MHHINC + Wave dummies
+## All county data + Urban county data with Region + MHHINC + Wave dummies
 
 ```{r}
-# Weekly Spatial Metrics with Region and Median Household Income Columns
-all_region_mhhinc_weekly_spatial_metrics = read.csv("region_mhhinc_weekly_spatial_metrics.csv")
-
 # Local Corelation with Region + MHHINC Columns
 all_region_mhhinc_weekly_localcor = read.csv("region_mhhinc_weekly_localcor.csv")
 urban_region_mhhinc_weekly_localcor = read.csv("urban_region_mhhinc_weekly_localcor.csv")
@@ -96,6 +93,12 @@ difference dummies) - features: start date of week, total cases,
 marginal cases, next week's marginal cases, C(r) for distance intervals
 from [0,50] to [970,1000], correlation length, region dummies, tier
 difference (same,1,2,3) dummies
+
+## All county data with Mask Usage + Wave dummies
+
+```{r}
+all_mask_weekly_spatial_metrics = read.csv("all_mask_weekly_spatial_metrics.csv")
+```
 
 # Simple Model, No Dummies (2 data sets, 4 models, 2 table, 2 models/table)
 
@@ -407,7 +410,7 @@ vif(lm(log(next_week_marginal_cases) ~  r_0_50 + factor(region) + factor(mhhinc_
 ```{r}
 # Create function that prints interpretation of coefficients
 
-print_interpretation <- function(coef, wave_val = "every wave",region_val = "whole US", tier_descr_val = "are disregarded", significant=TRUE, pred = "r_0_50", county="all counties", df=weekly_spatial_metrics_waves) {
+print_interpretation <- function(coef, wave_val = "every wave",region_val = "whole US", tier_descr_val = "are disregarded", significant=TRUE, pred = "r_0_50", county="all counties", df=weekly_spatial_metrics_waves, usage_descr_val= "are disregarded") {
   if (!is.na(coef) && isTRUE(significant)) {
     
     # Prep the data frame to calculate appropriate sd
@@ -432,8 +435,8 @@ print_interpretation <- function(coef, wave_val = "every wave",region_val = "who
     
     # To Print
     cat("- For", county,"across", wave_val, "in the", region_val, "where the median household income tiers", tier_descr_val, "\n")
-    cat("a 1 sd increase in ", pred_type," corresponds to a ", 
-        round(coef * factor_value * 100, 2), "% increase in cases in the following week. Significant? ", significant, "\n", sep = "")
+    cat(" and where mask usage in both counties", usage_descr_val, "a 1 sd increase", pred_type,"\n")
+    cat(" corresponds to a ", round(coef * factor_value * 100, 2), "% increase in cases in the following week. Significant? ", significant, "\n", sep = "")
   }
 }
 
@@ -448,7 +451,7 @@ save_coefficient <- function(interaction) {
 }
 
 # Create function to calculate significance of coefficient based on t-statistic
-is_significant <- function(coef, se, threshold = 2.576) { 
+is_significant <- function(coef, se, threshold = 2.57) { 
   if (!is.na(coef) && !is.na(se)) {
     # Calculate t-statistic
     t_stat <- coef / se
@@ -1622,6 +1625,281 @@ for (model in 1:length(mhhinc_lm_models_train)) {
 ```
 
 Significant differential effects among "equality level." Spread is greater among counties of similar socioeconomic leve. Strong results across every wave but especially in wave 3. Effects are not as discernible among Urban counties. Both correlation length and local correlation are effective metrics for predicting covid to discern socioeconimic effects.
+
+
+
+
+# Eleanor: Mask + Wave Models (1 data set, 4 models, 2 tables, 2 models/table)
+
+## Prepare Model Combinations
+
+```{r}
+# Data sets: (1) all counties & (2) urban counties
+datasets = list(all_mask_weekly_spatial_metrics)
+df_names = c("all")
+
+# Predictor: (1) correlation length & (2) local correlation
+predictor = c("cor_lengths", "r_0_50") 
+predictor_names = c("corlengths","localcor")
+
+# Covariates (1) mhhinc & (2) mhhinc + wave
+covariates = list(c("*factor(wave)*mask_11","*factor(wave)*mask_22","*factor(wave)*mask_33","*factor(wave)*mask_44"),
+                  c("*mask_11","*mask_22","*mask_33", "*mask_44"))
+var_names = c("wave_mask","mask")
+```
+
+## Generate Models
+
+```{r, warning = FALSE}
+# Create an empty list to store the models
+mask_lm_models <- list()
+
+# Iterate of every combination of data, predictor, and covariates
+for (d in 1:length(datasets)) {
+  df = datasets[d][[1]]
+  for (p in 1:length(predictor)) {
+    for (c in 1:length(covariates)) {
+      interactions = c()
+      for (i in 1:length(covariates[[c]])) {
+        interactions[i] <- paste(predictor[p], covariates[[c]][i])}
+     
+      # Create the formula
+      lm_formula <- as.formula(paste("log(next_week_marginal_cases) ~", paste(unlist(interactions), collapse = " + ")))
+      
+      # Fit the linear model
+      lm_model <- lm(lm_formula, data = df)
+      
+      # Generate a name for the model object
+      model_name <- paste(df_names[d],"_", predictor_names[p], "_", var_names[c], sep = "")
+      
+      # Save the model to the list
+     mask_lm_models[[model_name]] <- lm_model
+    }}}
+```
+
+
+### Training/Testing Models
+
+```{r}
+# Set seed for reproducibility
+set.seed(1)
+
+# Create an empty list to store the models
+mask_lm_models_train <- list()
+
+# Iterate over every combination of data, predictor, and covariates
+for (d in 1:length(datasets)) {
+  df <- datasets[[d]]
+  
+  # Create indices for train-test split
+  n_obs <- nrow(df)
+  train_indices <- sample(1:n_obs, size = round(train_ratio * n_obs), replace = FALSE)
+  test_indices <- setdiff(1:n_obs, train_indices)
+  
+  # Split the data into train and test sets
+  train_df <- df[train_indices, ]
+  test_df <- df[test_indices, ]
+  
+  for (p in 1:length(predictor)) {
+    for (c in 1:length(covariates)) {
+      interactions <- c()
+      for (i in 1:length(covariates[[c]])) {
+        interactions[i] <- paste(predictor[p], covariates[[c]][i])
+      }
+      
+      # Create the formula & fit linear model on the training data
+      lm_formula <- as.formula(paste("log(next_week_marginal_cases) ~", paste(unlist(interactions), collapse = " + ")))
+      lm_model_train <- lm(lm_formula, data = train_df)
+      
+      # Name model and save to list
+      model_name_train <- paste(df_names[d], "_", predictor_names[p], "_", var_names[c], "_train", sep = "")
+      mask_lm_models_train[[model_name_train]] <- lm_model_train
+      
+      # Apply the trained model to the test data and make predictions
+      test_predictions <- predict(lm_model_train, newdata = test_df)
+      
+      # Calculate residuals using predictions from the test dataset
+      residuals <- log(test_df$next_week_marginal_cases) - test_predictions
+      
+      # Create residual plot
+      plot(1:length(residuals), residuals,
+           main = paste("Residual Plot for", model_name_train),
+           xlab = "Actual Values",
+           ylab = "Residuals")
+      abline(h = 0, col = "blue")
+      
+      # Check if the mean of residuals is less than the standard deviation of the data
+      print(mean(abs(residuals), na.rm = TRUE) < sd(log(test_df$next_week_marginal_cases), na.rm = TRUE))
+    }
+  }
+}
+
+# Print the names of the models
+names(mask_lm_models_train)
+
+```
+
+
+## View Model Summaries
+
+```{r}
+for (m in 1:length(mask_lm_models_train)){
+  print(summary(mask_lm_models_train[[m]]))
+}
+names(mask_lm_models_train)
+```
+
+
+```{r, warning = FALSE}
+# stargazer table for all_corlengths_wave_mask_train and all_corlengths_mask_train
+# (1) is all
+# (2) is urban 
+stargazer(
+  c(mask_lm_models_train[1], mask_lm_models_train[2]),
+  type = 'text', 
+  title = "Regression of Covid Cases on Correlation Length and Mask Usage"
+)
+```
+
+```{r, warning = FALSE}
+# stargazer table for all_localcor_wave_mask_train and all_localcor_mask_train
+# (1) is all
+# (2) is urban
+stargazer(
+  c(mhhinc_lm_models_train[3], mhhinc_lm_models_train[4]),
+  type = 'text', 
+  title = "Regression of Covid Cases on Local Correlation and Mask Usage"
+)
+```
+
+## Print Results 
+
+## Check conditions of Normality of Residuals, Homoskedasticity,Linearity , No Perfect Multicollinearity, Independence of Residuals
+
+```{r}
+for (lm_model in mask_lm_models_train) {
+# 1. Linearity Check (Visual Inspection)
+plot(residuals(lm_model) ~ fitted(lm_model))
+
+# 2. Independence Check
+# Durbin-Watson test
+print(durbinWatsonTest(lm_model)[3])
+
+# 3. Homoscedasticity Check
+# Breusch-Pagan test for Heteroscedasticity
+print(bptest(lm_model)$p.value)
+
+# 4. Normality of Residuals Check (Visual Inspection)
+hist(residuals(lm_model), main = "Histogram of Residuals")
+}
+
+# 5. No Perfect Multicollinearity Check
+# Variance Inflation Factors (VIF)
+vif(lm(log(next_week_marginal_cases) ~  cor_lengths + factor(wave) + factor(mhhinc_tier) , data = all_mask_weekly_spatial_metrics))
+# Conditions not passed:
+## Heteroskedasticity in 
+## Non-linearity in 
+
+summary(mask_lm_models_train[[1]])
+```
+
+## Print non-NA Significant Results
+
+```{r}
+# Initialize values
+predictor <- c("cor_lengths","r_0_50")
+waves <- c("wave 1","wave 2", "wave 3")
+usage_same <- c("mask_11", "mask_22", "mask_33", "mask_44")
+usage_descr <- c("is less than 40%", "is between 40% and 50%", "is between 50% and 60%", "is greater than 60%")
+full_coef = c()
+full_coef1 = c()
+significant = c()
+significant1 = c()
+i=1
+j=1
+
+# Iterate over Wave and Tier diff dummies
+for (model in 1:length(mask_lm_models_train)) {
+  
+  # Get model stats
+  lm_model = mask_lm_models_train[[model]]
+  coefficients <- coef(lm_model)
+  coef_names <- names(coef(lm_model))
+  # se <- summary(lm_model)$coefficients[, "Std. Error"] use robust SE's
+  se <- sqrt(diag(vcovHC(lm_model)))
+  se_named <- rep(NA, length(coef_names))
+  se_named[names(se)] <- se
+  st_errors <- se_named[coef_names]
+  
+  # Based on model, decide if urban or all county df
+  if (model <=4) {
+    county = "all counties"
+    df = all_mask_weekly_spatial_metrics}
+  else {
+    county = "urban counties"
+    df = urban_mask_weekly_spatial_metrics}
+  
+  # Based on model, choose cor_length or local_cor as predictor
+  if (model %in% c(1,2)) {pred = predictor[1]}
+  else {pred = predictor[2]}
+    
+  # Wave dummies not included for even models
+  if (model %% 2 == 0) {
+    wave = "every wave"
+    for (m in 1:length(usage_same)) {
+      usage_comb <- usage_same[m]
+      interaction = coefficients[5+m]
+      se_total = sqrt(sum((st_errors[5+m])^2 + (st_errors[2])^2))
+      # Store coefficient
+      full_coef1[j] = save_coefficient(interaction)
+    
+      # Print interpretation and significance
+      significant1[j] <- is_significant(as.numeric(full_coef1[j]), as.numeric((se_total)))
+      print_interpretation(full_coef1[j], wave, region="whole US", tier_descr = "are disregarded", significant1[j], pred, county, df, usage_descr[m])}}
+  
+  # Wave dummies with mhhinc tier dummies
+  else {
+  # Iterate over each wave    
+  for (w in 1:length(waves)) {
+    wave <- waves[w]
+    # Iterate of each tier difference
+    for (m in 1:length(usage_same)) {
+      usage_comb <- usage_same[m]
+      if (wave == "Wave 1") {
+        partial_interaction_w <- 0
+        se_partial_w <- 0
+      } else {
+        partial_interaction_w <- coefficients[(7 + w)]
+        se_partial_w <- st_errors[(7 + w)]
+      }
+ 
+        partial_interaction_m <- coefficients[(3*m+8)]
+        se_partial_m <- st_errors[(3*m+8)]
+
+      if (wave != "Wave 1") {
+        full_interaction_wm <- coefficients[paste0(pred,":factor(wave)", w, ":", usage_comb)]
+        se_full_wm <- st_errors[paste0(pred,":factor(wave)", w, ":", usage_comb)]
+      } else {
+        full_interaction_wm <- 0
+        se_full_wm <- 0
+      }
+    # Calculate total standard error
+    se_total <- sqrt(se_partial_w^2 + se_partial_m^2 + se_full_wm^2 + st_errors[2]^2)
+    # Store coefficient information
+    interaction <- partial_interaction_w + partial_interaction_m + full_interaction_wm
+    
+    # Store coefficient
+    full_coef[i] = save_coefficient(interaction)
+    
+    # Print interpretation and significance
+    significant[i] <- is_significant(as.numeric(full_coef[i]), as.numeric((se_total)))
+    print_interpretation(full_coef[i], wave, region="whole US", tier_descr = "are disregarded", significant[i], pred, county, df, usage_descr[m])
+    i <- i + 1
+    }}}
+}
+```
+
+
 
 
 
