@@ -99,6 +99,7 @@ difference (same,1,2,3) dummies
 
 # Simple Model, No Dummies (2 data sets, 4 models, 2 table, 2 models/table)
 
+
 ## Prepare Model Combinations
 
 ```{r}
@@ -113,35 +114,84 @@ pred_names = c("corlength","localcor")
 
 ## Generate Models
 
-```{r, warning = FALSE}
-# Create an empty list to store the models
-simple_lm_models <- list()
+### Training/Testing Models
 
-# Iterate of every combination of data, predictor, and covariates
+```{r}
+# Set seed for reproducibility
+set.seed(1)
+
+# Create an empty list to store the models
+simple_lm_models_train <- list()
+
+# Define the train-test split ratio
+train_ratio <- 0.8
+test_ratio <- 1 - train_ratio
+
+# Apply the trained model to the test data and make predictions
 for (d in 1:length(datasets)) {
-  df = datasets[d][[1]]
+  df <- datasets[d][[1]]
+  n_obs <- nrow(df)
+  
+  # Create indices for train-test split
+  train_indices <- sample(1:n_obs, size = round(train_ratio * n_obs), replace = FALSE)
+  test_indices <- setdiff(1:n_obs, train_indices)
+  
+  # Split the data into train and test sets
+  train_df <- df[train_indices, ]
+  test_df <- df[test_indices, ]
+  
   for (p in 1:length(predictor)) {
      
-      # Create the formula
-      lm_formula <- as.formula(paste("log(next_week_marginal_cases) ~", predictor[p]))
-      
-      # Fit the linear model
-      lm_model <- lm(lm_formula, data = df)
-      
-      # Generate a name for the model object
-      model_name <- paste(df_names[d],"_", pred_names[p], sep = "")
-      
-      # Save the model to the list
-      simple_lm_models[[model_name]] <- lm_model
-  }}
-names(simple_lm_models)
+    # Create the formula
+    lm_formula <- as.formula(paste("log(next_week_marginal_cases) ~", predictor[p]))
+    
+    # Fit the linear model on the train set
+    lm_model_train <- lm(lm_formula, data = train_df)
+    
+    # Generate a name for the model object
+    model_name_train <- paste(df_names[d], "_", pred_names[p], "_train", sep = "")
+    
+    # Save the train model to the list
+    simple_lm_models_train[[model_name_train]] <- lm_model_train
+    
+    # Apply the trained model to the test data and make predictions
+    test_predictions <- predict(lm_model_train, newdata = test_df)
+    
+    # Calculate residuals using predictions from the test dataset
+    residuals <- log(test_df$next_week_marginal_cases)-test_predictions
+    
+    # Create residual plot
+    plot(1:length(residuals),residuals,
+         main = paste("Residual Plot for", model_name_train),
+         xlab = "Actual Values",
+         ylab = "Residuals")
+    abline(h = 0, col = "blue") 
+    
+    #is the mean of residuals less than standard deviation of data?
+    print(mean(abs(residuals), na.rm=TRUE) < sd(log(test_df$next_week_marginal_cases), na.rm=TRUE))
+
+    
+    # You can customize the plot further as needed
+    
+    # Save the plot if desired
+    # For example:
+    # pdf(file = paste(model_name_train, "_residual_plot.pdf", sep = ""))
+    # plot(test_df$log(next_week_marginal_cases), residuals,
+    #      main = paste("Residual Plot for", model_name_train),
+    #      xlab = "Actual Values",
+    #      ylab = "Residuals")
+    # dev.off()
+  }
+}
+
+names(simple_lm_models_train)
 ```
 
 ## View Model Summaries
 
 ```{r}
-for (m in 1:length(simple_lm_models)){
-  print(summary(simple_lm_models[[m]]))
+for (m in 1:length(simple_lm_models_train)){
+  print(summary(simple_lm_models_train[[m]]))
 }
 ```
 
@@ -151,7 +201,7 @@ for (m in 1:length(simple_lm_models)){
 # (1) is all
 # (2) is urban
 stargazer(
-  c(simple_lm_models[1], simple_lm_models[3]),
+  c(simple_lm_models_train[1], simple_lm_models_train[3]),
   type = 'text', 
   title = "Regression of Covid Cases on Correlation Length"
 )
@@ -162,7 +212,7 @@ stargazer(
 # (1) is all
 # (2) is urban
 stargazer(
-  c(simple_lm_models[2], simple_lm_models[4]),
+  c(simple_lm_models_train[2], simple_lm_models_train[4]),
   type = 'text', 
   title = "Regression of Covid Cases on Local Correlation"
 )
@@ -171,8 +221,8 @@ stargazer(
 ## Check conditions of Normality of Residuals, Homoskedasticity, Linearity, Independence of Residuals
 
 ```{r}
-for (i in 1:length(simple_lm_models)) {
-lm_model = simple_lm_models[[i]]
+for (i in 1:length(simple_lm_models_train)) {
+lm_model = simple_lm_models_train[[i]]
 
 # 1. Linearity Check (Visual Inspection)
 plot(residuals(lm_model) ~ fitted(lm_model))
@@ -195,11 +245,11 @@ hist(residuals(lm_model), main = "Histogram of Residuals")
 ## Print Results
 
 ```{r}
-units = c(round(sd(urban_weekly_spatial_metrics_waves$cor_lengths, na.rm = TRUE),2), round( sd(urban_weekly_spatial_metrics_waves$r_0_50) ,2))
+units = c(round(sd(all_weekly_spatial_metrics_waves$cor_lengths, na.rm = TRUE)), round( sd(all_weekly_spatial_metrics_waves$r_0_50) ,2))
 var = c("correlation length","local correlation")
 for (i in 1:4) {
   adj_i = 2-i%%2
-  print(paste("a 1 sd increase in ", var[adj_i]," (",units[adj_i], ") corresponds to a ", round(simple_lm_models[[i]]$coefficients[2]*units[adj_i]*100,2),"% change in cases in the following week across ", df_names[(i>2)+1]," counties", sep=""))}
+  print(paste("a 1 sd increase in ", var[adj_i]," (",units[adj_i], ") corresponds to a ", round(simple_lm_models_train[[i]]$coefficients[2]*units[adj_i]*100,2),"% change in cases in the following week across ", df_names[(i>2)+1]," counties", sep=""))}
 ```
 Effects are less strong when comparing across only the urban counties. Local correlation and correlation length seem to both hold a strong effect in indicating/predicting a rise in cases in the next week.
 
@@ -225,7 +275,7 @@ var_names = c("region_mhhinc")
 
 ```{r}
 # Create an empty list to store the models
-lm_models <- list()
+region_tiers_lm_models <- list()
 
 # Iterate over every combination of data, predictor, and covariates
 for (d in 1:length(datasets)) {
@@ -242,24 +292,82 @@ for (p in 1:length(predictor)) {
     
     # Name model and save to list
     model_name <- paste(df_names[d], pred_names[p], "_", var_names[c], sep = "")
-    lm_models[[model_name]] <- lm_model}}}
+    region_tiers_lm_models[[model_name]] <- lm_model}}}
 
-names(lm_models)
+names(region_tiers_lm_models)
 ```
 
+### Training/Testing Models
+```{r}
+# Set seed for reproducibility
+set.seed(1)
+
+# Create an empty list to store the models
+region_mhhinc_lm_models_train <- list()
+
+# Iterate over every combination of data, predictor, and covariates
+for (d in 1:length(datasets)) {
+  df <- datasets[d][[1]]
+  
+  # Create indices for train-test split
+  n_obs <- nrow(df)
+  train_indices <- sample(1:n_obs, size = round(train_ratio * n_obs), replace = FALSE)
+  test_indices <- setdiff(1:n_obs, train_indices)
+  
+  # Split the data into train and test sets
+  train_df <- df[train_indices, ]
+  test_df <- df[test_indices, ]
+  
+  for (p in 1:length(predictor)) {
+    for (c in 1:length(covariates)) {
+      interactions <- c()
+      for (i in 1:length(covariates[[c]])) {
+        interactions[i] <- paste(predictor[p], covariates[[c]][i])
+      }
+      
+      # Create the formula & fit linear model on the training data
+      lm_formula <- as.formula(paste("log(next_week_marginal_cases) ~", paste(unlist(interactions), collapse = " + ")))
+      lm_model_train <- lm(lm_formula, data = train_df)
+      
+      # Name model and save to list
+      model_name_train <- paste(df_names[d], pred_names[p], "_", var_names[c], "_train", sep = "")
+      region_mhhinc_lm_models_train[[model_name_train]] <- lm_model_train
+      
+      # Apply the trained model to the test data and make predictions
+      test_predictions <- predict(lm_model_train, newdata = test_df)
+      
+      # Calculate residuals using predictions from the test dataset
+      residuals <- log(test_df$next_week_marginal_cases) - test_predictions
+      
+      # Create residual plot
+      plot(1:length(residuals), residuals,
+           main = paste("Residual Plot for", model_name_train),
+           xlab = "Actual Values",
+           ylab = "Residuals")
+      abline(h = 0, col = "blue")
+      
+      # Check if the mean of residuals is less than the standard deviation of the data
+      print(mean(abs(residuals), na.rm = TRUE) < sd(log(test_df$next_week_marginal_cases), na.rm = TRUE))
+    }
+  }
+}
+
+names(region_mhhinc_lm_models_train)
+```
+Urban fit is suspicious
 
 ## View Model Summaries
 
 ```{r}
-for (m in 1:length(lm_models)){
-  print(summary(lm_models[[m]]))
+for (m in 1:length(region_mhhinc_lm_models_train)){
+  print(summary(region_mhhinc_lm_models_train[[m]]))
 }
 ```
 
 ```{r}
 # Correlation Length Models
 stargazer(
-  lm_models,
+  region_mhhinc_lm_models_train,
   type = 'text'
 )
 ```
@@ -267,8 +375,8 @@ stargazer(
 ## Check conditions of Normality of Residuals, Homoskedasticity,Linearity , No Perfect Multicollinearity, Independence of Residuals
 
 ```{r}
-for (i in 1:length(lm_models)) {
-lm_model = lm_models[[i]]
+for (i in 1:length(region_mhhinc_lm_models_train)) {
+lm_model = region_mhhinc_lm_models_train[[i]]
 
 # 1. Linearity Check (Visual Inspection)
 plot(residuals(lm_model) ~ fitted(lm_model))
@@ -312,10 +420,13 @@ print_interpretation <- function(coef, wave_val = "every wave",region_val = "who
 
     # Calculate sd units
     if (pred == "cor_lengths") {
-      factor_value = round(sd(df$cor_lengths, na.rm = TRUE),2)
+      # factor_value = round(sd(df$cor_lengths, na.rm = TRUE),2)
+      # constant sd units
+      factor_value = round(sd(all_weekly_spatial_metrics_waves$cor_lengths, na.rm = TRUE))
       pred_type = paste("correlation length (",factor_value ," km)",sep="")
     } else {
-      factor_value = round(sd(df$r_0_50, na.rm = TRUE),2)
+      # factor_value = round(sd(df$r_0_50, na.rm = TRUE),2)
+      factor_value = round(sd(all_weekly_spatial_metrics_waves$r_0_50, na.rm = TRUE), 2)
       pred_type = paste("local correlation (",factor_value,")",sep="")
     }
     
@@ -353,8 +464,8 @@ is_significant <- function(coef, se, threshold = 1.96) { #2.576
 
 ```{r}
 # Iterate over Regions and Tier diff dummies
-for (x in 1:length(lm_models)) {
-  lm_model <- lm_models[[x]]
+for (x in 1:length(region_mhhinc_lm_models_train)) {
+  lm_model <- region_mhhinc_lm_models_train[[x]]
   
   if (x == 1) {
     county <- "all counties"
@@ -439,37 +550,90 @@ pred_names = c("corlength","localcor")
 ```
 
 ## Generate Models
+
 ```{r}
 wave_lm_models <- list()
-wave_lm_models_alt <- list()
 
 for (d in 1:length(datasets)) {
   df = datasets[[d]]
   for (p in 1:length(predictor)) {
     # Create the formula by including wave_1 and wave_2 as covariates
     lm_formula <- as.formula(paste("log(next_week_marginal_cases) ~", paste(predictor[p],"*factor(wave)")))
-    lm_formula_alt <- as.formula(paste("log(next_week_marginal_cases) ~", paste(predictor[p],"*wave_1 +"), paste(predictor[p],"*wave_2")))
     
     # Fit the linear model
     lm_model <- lm(lm_formula, data = df)
-    lm_model_alt <- lm(lm_formula_alt, data = df)
     
     # Generate a name for the model object
     model_name <- paste(df_names[d], "_", pred_names[p], "_waves", sep = "")
     
     # Save the model to the list
     wave_lm_models[[model_name]] <- lm_model
-    wave_lm_models_alt[[model_name]] <- lm_model_alt
-
   }
 }
-names(wave_lm_models_alt)
+names(wave_lm_models)
+```
+
+### Training/Testing Models
+
+```{r}
+# Set seed for reproducibility
+set.seed(1)
+
+# Create an empty list to store the models
+wave_lm_models_train <- list()
+
+# Iterate over every combination of data, predictor, and covariates
+for (d in 1:length(datasets)) {
+  df <- datasets[[d]]
+  
+  # Create indices for train-test split
+  n_obs <- nrow(df)
+  train_indices <- sample(1:n_obs, size = round(train_ratio * n_obs), replace = FALSE)
+  test_indices <- setdiff(1:n_obs, train_indices)
+  
+  # Split the data into train and test sets
+  train_df <- df[train_indices, ]
+  test_df <- df[test_indices, ]
+  
+  for (p in 1:length(predictor)) {
+    # Create the formula
+    lm_formula <- as.formula(paste("log(next_week_marginal_cases) ~", paste(predictor[p], "*factor(wave)")))
+    
+    # Fit linear model on the training data
+    lm_model_train <- lm(lm_formula, data = train_df)
+    
+    # Generate a name for the model object
+    model_name_train <- paste(df_names[d], "_", pred_names[p], "_waves_train", sep = "")
+    
+    # Save the train model to the list
+    wave_lm_models_train[[model_name_train]] <- lm_model_train
+    
+    # Apply the trained model to the test data and make predictions
+    test_predictions <- predict(lm_model_train, newdata = test_df)
+    
+    # Calculate residuals using predictions from the test dataset
+    residuals <- log(test_df$next_week_marginal_cases) - test_predictions
+    
+    # Create residual plot
+    plot(1:length(residuals), residuals,
+         main = paste("Residual Plot for", model_name_train),
+         xlab = "Actual Values",
+         ylab = "Residuals")
+    abline(h = 0, col = "blue")
+    
+    # Check if the mean of residuals is less than the standard deviation of the data
+    print(mean(abs(residuals), na.rm = TRUE) < sd(log(test_df$next_week_marginal_cases), na.rm = TRUE))
+  }
+}
+
+# Print the names of the models
+names(wave_lm_models_train)
 ```
 
 ## View Model Summaries
 ```{r}
-for (m in 1:length(wave_lm_models)) {
-  print(summary(wave_lm_models[[m]]))
+for (m in 1:length(wave_lm_models_train)) {
+  print(summary(wave_lm_models_train[[m]]))
 }
 ```
 
@@ -478,7 +642,7 @@ for (m in 1:length(wave_lm_models)) {
 # (1) is all
 # (2) is urban
 stargazer(
-  c(wave_lm_models[1], wave_lm_models[3]),
+  c(wave_lm_models_train[1], wave_lm_models_train[3]),
   type = "text", 
   title = "Regression of Covid Cases on Correlation Length with Waves"
 )
@@ -489,25 +653,17 @@ stargazer(
 # (1) is all
 # (2) is urban
 stargazer(
-  c(wave_lm_models[2], wave_lm_models[4]),
+  c(wave_lm_models_train[2], wave_lm_models_train[4]),
   type = 'text', 
   title = "Regression of Covid Cases on Local Correlation with Waves"
 )
 ```
 
-```{r}
-units = c(round(sd(urban_weekly_spatial_metrics_waves$cor_lengths, na.rm = TRUE),2), round( sd(urban_weekly_spatial_metrics_waves$r_0_50) ,2))
-var = c("correlation length","local correlation")
-for (i in 1:4) {
-  adj_i = 2-i%%2
-  print(paste("a 1 sd increase in ", var[adj_i]," (",units[adj_i], ") corresponds to a ", round(wave_lm_models[[i]]$coefficients[2]*units[adj_i]*100,2),"% change in cases in the following week across ", df_names[(i>2)+1]," counties", sep=""))}
-```
-
 ## Check conditions of Normality of Residuals, Homoskedasticity,Linearity , No Perfect Multicollinearity, Independence of Residuals
 
 ```{r}
-for (i in 1:length(wave_lm_models)) {
-  lm_model = wave_lm_models[[i]]
+for (i in 1:length(wave_lm_models_train)) {
+  lm_model = wave_lm_models_train[[i]]
   
   # Linearity Check (Visual Inspection)
   plot(residuals(lm_model) ~ fitted(lm_model))
@@ -529,7 +685,10 @@ for (i in 1:length(wave_lm_models)) {
 ```
 
 ## Print Significant Results
+
 ```{r}
+# Lauren's 
+
 print_significant_wave_interpretations <- function(models) {
   for (i in 1:length(models)) {
     model <- models[[i]]
@@ -557,8 +716,6 @@ print_significant_wave_interpretations(wave_lm_models)
 ```
 
 ```{r}
-# FUNCTIONS DEFINED IN E's Section
-
 # Initialize values
 predictor <- c("cor_lengths","r_0_50")
 waves <- c("wave 1","wave 2", "wave 3")
@@ -567,10 +724,10 @@ significant = c()
 i=1
 
 # Iterate over Regions and Wave dummies
-for (model in 1:length(wave_lm_models_alt)) {
+for (model in 1:length(wave_lm_models_train)) {
   
   # Get model stats
-  lm_model = wave_lm_models[[model]]
+  lm_model = wave_lm_models_train[[model]]
   coefficients <- coef(lm_model)
   coef_names <- names(coef(lm_model))
   
@@ -615,12 +772,6 @@ for (model in 1:length(wave_lm_models_alt)) {
     print_interpretation(full_coef[i], wave, "whole US", "are disregarded", significant[i], pred, county, df)
     i <- i + 1
     }}
-
-summary(wave_lm_models[[1]])
-```
-
-```{r}
-summary(lm(log(next_week_marginal_cases) ~ cor_lengths*factor(wave), all_weekly_spatial_metrics_waves))
 ```
 
 # Aarushi: Region + Wave Models (2 data sets, 8 models, 4 tables, 2 models/table)
@@ -675,11 +826,71 @@ for (d in 1:length(datasets)) {
 print(names(region_lm_models))
 ```
 
+### Training/Testing Models
+```{r}
+# Set seed for reproducibility
+set.seed(1)
+
+# Create an empty list to store the models
+region_lm_models_train <- list()
+
+# Iterate over every combination of data, predictor, and covariates
+for (d in 1:length(datasets)) {
+  df <- datasets[[d]]
+  
+  # Create indices for train-test split
+  n_obs <- nrow(df)
+  train_indices <- sample(1:n_obs, size = round(train_ratio * n_obs), replace = FALSE)
+  test_indices <- setdiff(1:n_obs, train_indices)
+  
+  # Split the data into train and test sets
+  train_df <- df[train_indices, ]
+  test_df <- df[test_indices, ]
+  
+  for (p in 1:length(predictor)) {
+    for (c in 1:length(covariates)) {
+      interactions <- c()
+      for (i in 1:length(covariates[[c]])) {
+        interactions[i] <- paste(predictor[p], covariates[[c]][i])
+      }
+      
+      # Create the formula & fit linear model on the training data
+      lm_formula <- as.formula(paste("log(next_week_marginal_cases) ~", paste(unlist(interactions), collapse = " + ")))
+      lm_model_train <- lm(lm_formula, data = train_df)
+      
+      # Name model and save to list
+      model_name_train <- paste(df_names[d], "_", predictor_names[p], "_", var_names[c], "_train", sep = "")
+      region_lm_models_train[[model_name_train]] <- lm_model_train
+      
+      # Apply the trained model to the test data and make predictions
+      test_predictions <- predict(lm_model_train, newdata = test_df)
+      
+      # Calculate residuals using predictions from the test dataset
+      residuals <- log(test_df$next_week_marginal_cases) - test_predictions
+      
+      # Create residual plot
+      plot(1:length(residuals), residuals,
+           main = paste("Residual Plot for", model_name_train),
+           xlab = "Actual Values",
+           ylab = "Residuals")
+      abline(h = 0, col = "blue")
+      
+      # Check if the mean of residuals is less than the standard deviation of the data
+      print(mean(abs(residuals), na.rm = TRUE) < sd(log(test_df$next_week_marginal_cases), na.rm = TRUE))
+    }
+  }
+}
+
+# Print the names of the models
+names(region_lm_models_train)
+
+```
+
 ## View Model Summaries
 
 ```{r}
-for (m in 1:length(region_lm_models)){
-  print(summary(region_lm_models[[m]]))
+for (m in 1:length(region_lm_models_train)){
+  print(summary(region_lm_models_train[[m]]))
 }
 ```
 all_localcor_region and urban_localcor_region do not have
@@ -694,7 +905,7 @@ for this model. Will make 3 stargazer tables, for these pairs of models:
 # (1) is all
 # (2) is urban 
 stargazer(
-  c(region_lm_models[1], region_lm_models[5]),
+  c(region_lm_models_train[1], region_lm_models_train[5]),
   type = 'text', 
   title = "Regression of Covid Cases on Correlation Length, Wave and Region"
 )
@@ -705,7 +916,7 @@ stargazer(
 # (1) is all
 # (2) is urban
 stargazer(
-  c(region_lm_models[2], region_lm_models[6]),
+  c(region_lm_models_train[2], region_lm_models_train[6]),
   type = 'text', 
   title = "Regression of Covid Cases on Correlation Length and Region"
 )
@@ -716,7 +927,7 @@ stargazer(
 # (1) is all
 # (2) is urban
 stargazer(
-  c(region_lm_models[3], region_lm_models[7]),
+  c(region_lm_models_train[3], region_lm_models_train[7]),
   type = 'text', 
   title = "Regression of Covid Cases on Local Correlation, Wave and Region"
 )
@@ -730,7 +941,7 @@ First look at the models corlengths_wave_region. If we look at all counties, the
 
 ```{r}
 # print results for significant interaction terms for urban counties
-coefficients <- coef(region_lm_models[[5]])
+coefficients <- coef(region_lm_models_train[[5]])
 
 coef_val <- coefficients["cor_lengths:factor(wave)2"]
 coef <- coef_val + coefficients["cor_lengths"]
@@ -808,7 +1019,7 @@ Next look at the models corlengths_region. If we look at all counties, the inter
 
 ```{r}
 # print results for significant interaction terms for all counties
-coefficients <- coef(region_lm_models[[2]])
+coefficients <- coef(region_lm_models_train[[2]])
 
 coef_val <- coefficients["cor_lengths:midwest"]
 coef <- coef_val + coefficients["cor_lengths"]
@@ -820,7 +1031,7 @@ cat("a ", cor_length_unit, " km increase in correlation length corresponds to a 
 
 ```{r}
 # print results for significant interaction terms for urban counties
-coefficients <- coef(region_lm_models[[6]])
+coefficients <- coef(region_lm_models_train[[6]])
 
 coef_val <- coefficients["cor_lengths:south"]
 coef <- coef_val + coefficients["cor_lengths"]
@@ -834,7 +1045,7 @@ Lastly look at the models localcor_wave_region. If we look at all counties, the 
 
 ```{r}
 # print results for significant interaction terms for all counties
-coefficients <- coef(region_lm_models[[3]])
+coefficients <- coef(region_lm_models_train[[3]])
 
 coef_val <- coefficients["log(r_0_50):factor(wave)3"]
 coef <- coef_val + coefficients["log(r_0_50)"]
@@ -857,7 +1068,7 @@ cat("a 10 % increase in local correlation corresponds to a ",
 
 ```{r}
 # print results for significant interaction terms for urban counties
-coefficients <- coef(region_lm_models[[7]])
+coefficients <- coef(region_lm_models_train[[7]])
 
 coef_val <- coefficients["log(r_0_50):northeast"]
 coef <- coef_val + coefficients["log(r_0_50)"]
@@ -877,7 +1088,7 @@ cat("a 10 % increase in local correlation corresponds to a ",
 ### Check conditions of Normality of Residuals, Homoskedasticity,Linearity , No Perfect Multicollinearity, Independence of Residuals
 
 ```{r}
-for (lm_model in region_lm_models) {
+for (lm_model in region_lm_models_train) {
   
 # 1. Linearity Check (Visual Inspection)
 plot(residuals(lm_model) ~ fitted(lm_model))
@@ -911,7 +1122,6 @@ names(region_lm_models)
 ## Print non-NA Significant Results
 
 ```{r}
-# FUNCTIONS DEFINED IN E's Section
 
 # Initialize values
 predictor <- c("cor_lengths","r_0_50")
@@ -925,10 +1135,10 @@ i=1
 j=1
 
 # Iterate over Regions and Wave dummies
-for (model in 1:length(region_lm_models)) {
+for (model in 1:length(region_lm_models_train)) {
   
   # Get model stats
-  lm_model = region_lm_models[[model]]
+  lm_model = region_lm_models_train[[model]]
   coefficients <- coef(lm_model)
   coef_names <- names(coef(lm_model))
   
@@ -1014,7 +1224,7 @@ for (model in 1:length(region_lm_models)) {
 }
 ```
 
-Regional effects are strong in all regions, but weaker in the Northeast. Strongest results are in the West. Significant results across all waves, particularly strong regional effects in wave 1. Effects are not as discernible among Urban counties. Correlation length is better for predicting covid when discerning regional effects.
+Regional effects are strong in all regions. Significant results across all waves, particularly strong regional effects in wave 1. Strange results in the Northeast in wave 1. Effects are not as discernible among Urban counties. Correlation length is better for predicting covid when discerning regional effects.
 
 # Meichen: MHHINC + Wave Models (2 data sets, 8 models, 4 tables, 2 models/table)
 
@@ -1068,11 +1278,74 @@ for (d in 1:length(datasets)) {
 print(names(mhhinc_lm_models))
 ```
 
+### Training/Testing Models
+
+```{r}
+# Set seed for reproducibility
+set.seed(1)
+
+# Create an empty list to store the models
+mhhinc_lm_models_train <- list()
+
+# Iterate over every combination of data, predictor, and covariates
+for (d in 1:length(datasets)) {
+  df <- datasets[[d]]
+  
+  # Create indices for train-test split
+  n_obs <- nrow(df)
+  train_indices <- sample(1:n_obs, size = round(train_ratio * n_obs), replace = FALSE)
+  test_indices <- setdiff(1:n_obs, train_indices)
+  
+  # Split the data into train and test sets
+  train_df <- df[train_indices, ]
+  test_df <- df[test_indices, ]
+  
+  for (p in 1:length(predictor)) {
+    for (c in 1:length(covariates)) {
+      interactions <- c()
+      for (i in 1:length(covariates[[c]])) {
+        interactions[i] <- paste(predictor[p], covariates[[c]][i])
+      }
+      
+      # Create the formula & fit linear model on the training data
+      lm_formula <- as.formula(paste("log(next_week_marginal_cases) ~", paste(unlist(interactions), collapse = " + ")))
+      lm_model_train <- lm(lm_formula, data = train_df)
+      
+      # Name model and save to list
+      model_name_train <- paste(df_names[d], "_", predictor_names[p], "_", var_names[c], "_train", sep = "")
+      mhhinc_lm_models_train[[model_name_train]] <- lm_model_train
+      
+      # Apply the trained model to the test data and make predictions
+      test_predictions <- predict(lm_model_train, newdata = test_df)
+      
+      # Calculate residuals using predictions from the test dataset
+      residuals <- log(test_df$next_week_marginal_cases) - test_predictions
+      
+      # Create residual plot
+      plot(1:length(residuals), residuals,
+           main = paste("Residual Plot for", model_name_train),
+           xlab = "Actual Values",
+           ylab = "Residuals")
+      abline(h = 0, col = "blue")
+      
+      # Check if the mean of residuals is less than the standard deviation of the data
+      print(mean(abs(residuals), na.rm = TRUE) < sd(log(test_df$next_week_marginal_cases), na.rm = TRUE))
+    }
+  }
+}
+
+# Print the names of the models
+names(mhhinc_lm_models_train)
+
+```
+
+Seems like the models are unreliable for the urban + local correlation models
+
 ## View Model Summaries
 
 ```{r}
-for (m in 1:length(mhhinc_lm_models)){
-  print(summary(mhhinc_lm_models[[m]]))
+for (m in 1:length(mhhinc_lm_models_train)){
+  print(summary(mhhinc_lm_models_train[[m]]))
 }
 ```
 
@@ -1088,7 +1361,7 @@ model. Will make 3 stargazer tables, for these pairs of models:
 # (1) is all
 # (2) is urban 
 stargazer(
-  c(mhhinc_lm_models[2], mhhinc_lm_models[6]),
+  c(mhhinc_lm_models_train[2], mhhinc_lm_models_train[6]),
   type = 'text', 
   title = "Regression of Covid Cases on Correlation Length and Mhhinc Tier Difference"
 )
@@ -1099,7 +1372,7 @@ stargazer(
 # (1) is all
 # (2) is urban
 stargazer(
-  c(mhhinc_lm_models[3], mhhinc_lm_models[7]),
+  c(mhhinc_lm_models_train[3], mhhinc_lm_models_train[7]),
   type = 'text', 
   title = "Regression of Covid Cases on Local Correlation,Mhhinc Tier Difference, and Wave"
 )
@@ -1217,7 +1490,7 @@ for (m in tier_diff) {
 ### Check conditions of Normality of Residuals, Homoskedasticity,Linearity , No Perfect Multicollinearity, Independence of Residuals
 
 ```{r}
-for (lm_model in mhhinc_lm_models) {
+for (lm_model in mhhinc_lm_models_train) {
 # 1. Linearity Check (Visual Inspection)
 plot(residuals(lm_model) ~ fitted(lm_model))
 
@@ -1261,10 +1534,10 @@ i=1
 j=1
 
 # Iterate over Wave and Tier diff dummies
-for (model in 1:length(mhhinc_lm_models)) {
+for (model in 1:length(mhhinc_lm_models_train)) {
   
   # Get model stats
-  lm_model = mhhinc_lm_models[[model]]
+  lm_model = mhhinc_lm_models_train[[model]]
   coefficients <- coef(lm_model)
   coef_names <- names(coef(lm_model))
   # se <- summary(lm_model)$coefficients[, "Std. Error"] use robust SE's
