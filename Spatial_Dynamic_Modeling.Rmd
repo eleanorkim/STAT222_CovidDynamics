@@ -448,7 +448,7 @@ save_coefficient <- function(interaction) {
 }
 
 # Create function to calculate significance of coefficient based on t-statistic
-is_significant <- function(coef, se, threshold = 1.96) { #2.576
+is_significant <- function(coef, se, threshold = 2.576) { 
   if (!is.na(coef) && !is.na(se)) {
     # Calculate t-statistic
     t_stat <- coef / se
