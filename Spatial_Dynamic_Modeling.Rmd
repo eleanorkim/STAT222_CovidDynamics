@@ -21,7 +21,7 @@ library(car)
 ```
 
 # Read in 9 Datasets
-
+m m
 ## All county data + Urban county data with Wave dummies
 
 ```{r}
@@ -1227,8 +1227,6 @@ for (model in 1:length(region_lm_models_train)) {
 }
 ```
 
-Regional effects are strong in all regions. Significant results across all waves, particularly strong regional effects in wave 1. Strange results in the Northeast in wave 1. Effects are not as discernible among Urban counties. Correlation length is better for predicting covid when discerning regional effects.
-
 # Meichen: MHHINC + Wave Models (2 data sets, 8 models, 4 tables, 2 models/table)
 
 ## Prepare Model Combinations
@@ -1515,14 +1513,14 @@ vif(lm(log(next_week_marginal_cases) ~  cor_lengths + factor(wave) + factor(mhhi
 vif(lm(log(next_week_marginal_cases) ~  cor_lengths + factor(wave) + factor(mhhinc_tier) , data = urban_mhhinc_weekly_spatial_metrics))
 
 # Conditions not passed:
-## Heteroskedasticity in all_localcor_mhhinc and urban_localcor_mhhinc
+## Heteroskedasticity in all_corlengths_wave_mhhinc_train, all_localcor_wave_mhhinc_train, all_localcor_mhhinc, all urban models
 ## Non-linearity in urban_localcor_wave_mhhinc, urban_localcor_mhhinc
+names(mhhinc_lm_models_train)
 ```
 
 ## Print non-NA Significant Results
 
 ```{r}
-# FUNCTIONS DEFINED IN E's Section
 
 # Initialize values
 predictor <- c("cor_lengths","r_0_50")
@@ -1795,12 +1793,9 @@ hist(residuals(lm_model), main = "Histogram of Residuals")
 
 # 5. No Perfect Multicollinearity Check
 # Variance Inflation Factors (VIF)
-vif(lm(log(next_week_marginal_cases) ~  cor_lengths + factor(wave) + factor(mhhinc_tier) , data = all_mask_weekly_spatial_metrics))
+vif(lm(log(next_week_marginal_cases) ~  cor_lengths + factor(wave) + factor(mask_usage) , data = all_mask_weekly_spatial_metrics))
 # Conditions not passed:
-## Heteroskedasticity in 
-## Non-linearity in 
-
-summary(mask_lm_models_train[[1]])
+## Heteroskedasticity in all_localcor_mask_train
 ```
 
 ## Print non-NA Significant Results
