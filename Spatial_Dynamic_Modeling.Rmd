@@ -1,13 +1,10 @@
 ---
-title: "Spatial Dynamics - Modeling"
+title: "COVID-19 Spatial Dynamics in the US: Spatiotemporal Analysis of Predicting Covid Cases on Correlation Length and Local Correlation with Time-invariant Controls"
 subtitle: "Aarushi Somani, Eleanor Kim, Lauren Murai, Meichen Chen"
+date: '2024-04-16'
 output:
   pdf_document: default
-  html_document: default
-date: '2024-03-11'
-editor_options: 
-  markdown: 
-    wrap: 72
+  word_document: default
 ---
 
 ```{r, warning = FALSE}
@@ -21,7 +18,6 @@ library(car)
 ```
 
 # Read in 9 Datasets
-m m
 ## All county data + Urban county data with Wave dummies
 
 ```{r}
@@ -32,14 +28,6 @@ all_weekly_spatial_metrics_waves = read.csv("weekly_spatial_metrics_waves.csv")
 urban_weekly_spatial_metrics_waves = read.csv("urban_weekly_spatial_metrics_waves.csv")
 ```
 
-Output: weekly_spatial_metrics_waves - Weekly data set with
-corresponding covid cases, spatial correlations, and correlation
-lengths - 157 rows (weeks 9 - 165) x 57 columns (date, cases, cor
-length, C(r), wave dummies) - features: start date of week, total cases,
-marginal cases, next week's marginal cases, C(r) for distance intervals
-from [0,50] to [970,1000], correlation length, wave, wave 1 dummy, wave
-2 dummy
-
 ## All county data + Urban county data with Region + Wave dummies
 ```{r}
 # Weekly Spatial Metrics with Region Columns
@@ -48,14 +36,6 @@ all_regional_weekly_spatial_metrics = read.csv("regional_weekly_spatial_metrics.
 # same data set but calculations from urban counties only (pop >250k)
 urban_regional_weekly_spatial_metrics = read.csv("urban_regional_weekly_spatial_metrics.csv")
 ```
-
-Output: regional_weekly_spatial_metrics - Weekly data set with
-corresponding covid cases, spatial correlations, and correlation
-lengths - 628 rows (weeks 9 - 165 x 4 regions) x 59 columns (date,
-cases, cor length, C(r), region dummies) - features: start date of week,
-total cases, marginal cases, next week's marginal cases, C(r) for
-distance intervals from [0,50] to [970,1000], correlation length,
-region, northeast dummy, midwest dummy, south dummy
 
 ## All county data + Urban county data with MHHINC + Wave dummies
 
@@ -67,40 +47,25 @@ all_mhhinc_weekly_spatial_metrics = read.csv("mhhinc_weekly_spatial_metrics.csv"
 urban_mhhinc_weekly_spatial_metrics = read.csv("urban_mhhinc_weekly_spatial_metrics.csv")
 ```
 
-Output: mhhinc_weekly_spatial_metrics - Weekly data set with
-corresponding covid cases, spatial correlations, and correlation
-lengths - 1570 rows (weeks 9 - 165 x 10 combinations of 4 tiers) x 71
-columns (date, cases, cor length, C(r), poverty dummies) - features:
-start date of week, total cases, marginal cases, next week's marginal
-cases, C(r) for distance intervals from [0,50] to [970,1000],
-correlation length, income pair tiers (4 choose 2) dummies, income tier
-differences (same tier, difference of 1, difference of 2, difference of
-3)
-
 ## All county data + Urban county data with Region + MHHINC + Wave dummies
 
 ```{r}
 # Local Corelation with Region + MHHINC Columns
 all_region_mhhinc_weekly_localcor = read.csv("region_mhhinc_weekly_localcor.csv")
+
+# same data set but calculations from urban counties only (pop >250k)
 urban_region_mhhinc_weekly_localcor = read.csv("urban_region_mhhinc_weekly_localcor.csv")
 ```
 
-Output: region_mhhinc_weekly_spatial_metrics - Weekly data set with
-corresponding covid cases, spatial correlations, and correlation
-lengths - 6280 rows (weeks 9 - 165 x 10 combinations of 4 tiers X 4
-regions) x 67 columns (date, cases, cor length, C(r), region and tier
-difference dummies) - features: start date of week, total cases,
-marginal cases, next week's marginal cases, C(r) for distance intervals
-from [0,50] to [970,1000], correlation length, region dummies, tier
-difference (same,1,2,3) dummies
 
 ## All county data with Mask Usage + Wave dummies
 
 ```{r}
+# Weekly Spatial Metrics with Mask Usaege Columns
 all_mask_weekly_spatial_metrics = read.csv("all_mask_weekly_spatial_metrics.csv")
 ```
 
-# Simple Model, No Dummies (2 data sets, 4 models, 2 table, 2 models/table)
+# Simple Models
 
 
 ## Prepare Model Combinations
@@ -173,17 +138,7 @@ for (d in 1:length(datasets)) {
     #is the mean of residuals less than standard deviation of data?
     print(mean(abs(residuals), na.rm=TRUE) < sd(log(test_df$next_week_marginal_cases), na.rm=TRUE))
 
-    
-    # You can customize the plot further as needed
-    
-    # Save the plot if desired
-    # For example:
-    # pdf(file = paste(model_name_train, "_residual_plot.pdf", sep = ""))
-    # plot(test_df$log(next_week_marginal_cases), residuals,
-    #      main = paste("Residual Plot for", model_name_train),
-    #      xlab = "Actual Values",
-    #      ylab = "Residuals")
-    # dev.off()
+
   }
 }
 
@@ -245,7 +200,7 @@ hist(residuals(lm_model), main = "Histogram of Residuals")
 # Heteroskedasticity/Non-linearity in Urban Local Correlation Model
 ```
 
-## Print Results
+## Interpretations
 
 ```{r}
 units = c(round(sd(all_weekly_spatial_metrics_waves$cor_lengths, na.rm = TRUE)), round( sd(all_weekly_spatial_metrics_waves$r_0_50) ,2))
@@ -256,7 +211,7 @@ for (i in 1:4) {
 ```
 Effects are less strong when comparing across only the urban counties. Local correlation and correlation length seem to both hold a strong effect in indicating/predicting a rise in cases in the next week.
 
-# Eleanor: Region + Median Household Income Models (1 data set, 2 models, 1 table, 1 model/table)
+# Region + Median Household Income Models
 
 ## Prepare Model Combinations
 
@@ -463,7 +418,7 @@ is_significant <- function(coef, se, threshold = 2.57) {
 }
 ```
 
-## Print non-NA Significant Results
+## Interpretations
 
 ```{r}
 # Iterate over Regions and Tier diff dummies
@@ -539,7 +494,7 @@ for (x in 1:length(region_mhhinc_lm_models_train)) {
 
 Regional and equality level effects are significant in the South and Midwest across every wave. Slightly stronger effects in the South than the midwest among counties of similar median household income tier. Effects are not as discernible among Urban counties. We don't have enough data to calculate correlation length but local correlation is an effective metric here.
 
-# Lauren: Wave Models (2 data sets, 4 models, 2 tables, 2 models/table)
+# Wave Models
 
 ## Prepare Model Combinations
 ```{r}
@@ -687,7 +642,8 @@ for (i in 1:length(wave_lm_models_train)) {
 # Non-linearity  in all_corlength_waves and urban_localcor_waves
 ```
 
-## Print Significant Results
+## Interpretations
+### Print Significant Results
 
 ```{r}
 # Lauren's 
@@ -777,7 +733,7 @@ for (model in 1:length(wave_lm_models_train)) {
     }}
 ```
 
-# Aarushi: Region + Wave Models (2 data sets, 8 models, 4 tables, 2 models/table)
+# Region + Wave Models
 
 ## Prepare Model Combinations
 
@@ -936,159 +892,7 @@ stargazer(
 )
 ```
 
-## Print Results 
-
-Do not print results for all_localcor_region and urban_localcor_region since there's no significant interaction terms.
-
-First look at the models corlengths_wave_region. If we look at all counties, the interaction terms for cor_lengths:factor(wave)3 and cor_lengths:northeast are significant. If we only look at urban counties, all interaction terms are significant except cor_lengths:midwest and wave 2:midwest. I'll print results for urban_corlengths_wave_region.
-
-```{r}
-# print results for significant interaction terms for urban counties
-coefficients <- coef(region_lm_models_train[[5]])
-
-coef_val <- coefficients["cor_lengths:factor(wave)2"]
-coef <- coef_val + coefficients["cor_lengths"]
-cor_length_unit <- 50
-cat("- Among all urban counties in wave 2 \n")
-cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
-        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
-
-coef_val <- coefficients["cor_lengths:factor(wave)3"]
-coef <- coef_val + coefficients["cor_lengths"]
-cor_length_unit <- 50
-cat("- Among all urban counties in wave 3 \n")
-cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
-        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
-
-coef_val <- coefficients["cor_lengths:northeast"]
-coef <- coef_val + coefficients["cor_lengths"]
-cor_length_unit <- 50
-cat("- Among all urban counties in the NorthEast region \n")
-cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
-        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
-
-coef_val <- coefficients["cor_lengths:south"]
-coef <- coef_val + coefficients["cor_lengths"]
-cor_length_unit <- 50
-cat("- Among all urban counties in the South region \n")
-cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
-        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
-
-coef_val <- coefficients["cor_lengths:factor(wave)2:northeast"]
-coef <- coef_val + coefficients["cor_lengths"]
-cor_length_unit <- 50
-cat("- Among all urban counties in Wave 2 in the Northeast region \n")
-cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
-        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
-
-coef_val <- coefficients["cor_lengths:factor(wave)2:midwest"]
-coef <- coef_val + coefficients["cor_lengths"]
-cor_length_unit <- 50
-cat("- Among all urban counties in Wave 2 in the Midwest region \n")
-cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
-        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
-
-coef_val <- coefficients["cor_lengths:factor(wave)2:south"]
-coef <- coef_val + coefficients["cor_lengths"]
-cor_length_unit <- 50
-cat("- Among all urban counties in Wave 2 in the South region \n")
-cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
-        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
-
-coef_val <- coefficients["cor_lengths:factor(wave)3:northeast"]
-coef <- coef_val + coefficients["cor_lengths"]
-cor_length_unit <- 50
-cat("- Among all urban counties in Wave 3 in the Northeast region \n")
-cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
-        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
-
-coef_val <- coefficients["cor_lengths:factor(wave)3:midwest"]
-coef <- coef_val + coefficients["cor_lengths"]
-cor_length_unit <- 50
-cat("- Among all urban counties in Wave 3 in the Midwest region \n")
-cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
-        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
-
-coef_val <- coefficients["cor_lengths:factor(wave)3:south"]
-coef <- coef_val + coefficients["cor_lengths"]
-cor_length_unit <- 50
-cat("- Among all urban counties in Wave 3 in the South region \n")
-cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
-        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
-
-```
-
-Next look at the models corlengths_region. If we look at all counties, the interaction term for cor_lengths:midwest is significant. If we only look at urban counties, the interaction term for cor_lengths:south is significant. 
-
-```{r}
-# print results for significant interaction terms for all counties
-coefficients <- coef(region_lm_models_train[[2]])
-
-coef_val <- coefficients["cor_lengths:midwest"]
-coef <- coef_val + coefficients["cor_lengths"]
-cor_length_unit <- 50
-cat("- Among all counties in the Midwest region \n")
-cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
-        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
-```
-
-```{r}
-# print results for significant interaction terms for urban counties
-coefficients <- coef(region_lm_models_train[[6]])
-
-coef_val <- coefficients["cor_lengths:south"]
-coef <- coef_val + coefficients["cor_lengths"]
-cor_length_unit <- 50
-cat("- Among all urban counties in the South region \n")
-cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
-        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")
-```
-
-Lastly look at the models localcor_wave_region. If we look at all counties, the interaction terms for log(r_0_50):factor(wave)3, log(r_0_50):northeast, factor(wave)2:midwest, factor(wave)3:south and log(r_0_50):factor(wave)3:south are significant. If we only look at urban counties, the interaction terms for log(r_0_50):northeast and log(r_0_50):factor(wave)3:midwest are significant. 
-
-```{r}
-# print results for significant interaction terms for all counties
-coefficients <- coef(region_lm_models_train[[3]])
-
-coef_val <- coefficients["log(r_0_50):factor(wave)3"]
-coef <- coef_val + coefficients["log(r_0_50)"]
-cat("- Among all counties in Wave 3 \n")
-cat("a 10 % increase in local correlation corresponds to a ", 
-        round(exp(coef * log(1.1))* 100 - 100, 2), "% change in cases in the following week\n\n", sep = "")
-
-coef_val <- coefficients["log(r_0_50):northeast"]
-coef <- coef_val + coefficients["log(r_0_50)"]
-cat("- Among all counties in the Northeast region \n")
-cat("a 10 % increase in local correlation corresponds to a ", 
-        round(exp(coef * log(1.1))* 100 - 100, 2), "% change in cases in the following week\n\n", sep = "")
-
-coef_val <- coefficients["log(r_0_50):factor(wave)3:south"]
-coef <- coef_val + coefficients["log(r_0_50)"]
-cat("- Among all counties in Wave 3 in the South region \n")
-cat("a 10 % increase in local correlation corresponds to a ", 
-        round(exp(coef * log(1.1))* 100 - 100, 2), "% change in cases in the following week\n\n", sep = "")
-```
-
-```{r}
-# print results for significant interaction terms for urban counties
-coefficients <- coef(region_lm_models_train[[7]])
-
-coef_val <- coefficients["log(r_0_50):northeast"]
-coef <- coef_val + coefficients["log(r_0_50)"]
-cat("- Among all counties in the Northeast region \n")
-cat("a 10 % increase in local correlation corresponds to a ", 
-        round(exp(coef * log(1.1))* 100 - 100, 2), "% change in cases in the following week\n\n", sep = "")
-
-coef_val <- coefficients["log(r_0_50):factor(wave)3:midwest"]
-coef <- coef_val + coefficients["log(r_0_50)"]
-cat("- Among all counties in Wave 3 in the Midwest region \n")
-cat("a 10 % increase in local correlation corresponds to a ", 
-        round(exp(coef * log(1.1))* 100 - 100, 2), "% change in cases in the following week\n\n", sep = "")
-```
-
-## new result interpretations for region + wave models
-
-### Check conditions of Normality of Residuals, Homoskedasticity,Linearity , No Perfect Multicollinearity, Independence of Residuals
+## Check conditions of Normality of Residuals, Homoskedasticity,Linearity , No Perfect Multicollinearity, Independence of Residuals
 
 ```{r}
 for (lm_model in region_lm_models_train) {
@@ -1122,7 +926,7 @@ names(region_lm_models)
 ## solutions --> use robust standard errors, reject a 99% level for strong results
 ```
 
-## Print non-NA Significant Results
+## Interpretations
 
 ```{r}
 
@@ -1214,7 +1018,7 @@ for (model in 1:length(region_lm_models_train)) {
     # Calculate total standard error
     se_total <- sqrt(se_partial_w^2 + se_partial_r^2 + se_full_wr^2 + st_errors[2]^2)
     # Store coefficient information
-    interaction <- partial_interaction_w + partial_interaction_r + full_interaction_wm
+    interaction <- partial_interaction_w + partial_interaction_r + full_interaction_wr
     
     # Store coefficient
     full_coef[i] = save_coefficient(interaction)
@@ -1227,7 +1031,7 @@ for (model in 1:length(region_lm_models_train)) {
 }
 ```
 
-# Meichen: MHHINC + Wave Models (2 data sets, 8 models, 4 tables, 2 models/table)
+# MHHINC + Wave Models
 
 ## Prepare Model Combinations
 
@@ -1390,105 +1194,7 @@ stargazer(
 )
 ```
 
-## Print Results 
-
-Do not print results for all_corlengths_wave_mhhinc and urban_corlengths_wave_mhhinc since there's no significant interaction terms.
-
-First look at the models corlengths_mhhinc. If we look at all counties, the interaction terms for cor_lengths:same_tier and cor_lengths:tier_diff_1 are significant. If we only look at urban counties, no interaction terms are significant. I'll print results for all_corlengths_mhhinc. 
-
-```{r}
-# Create function that prints results
-print_coefficients <- function(coef_val, tier_diff, tier_descr, cor_length_unit) {
-  if (!is.na(coef_val)) {
-    coef <- coef_val + coefficients["cor_lengths"]
-    cat("- Among all counties where the median household income tiers", tier_descr, "\n")
-    cat("a ", cor_length_unit, " km increase in correlation length corresponds to a ", 
-        round(coef * cor_length_unit * 100, 2), "% change in cases in the following week\n\n", sep = "")}}
-
-coefficients <- coef(mhhinc_lm_models[[2]])
-tier_diff <- c("same_tier", "tier_diff_1")
-tier_descr <- c("are the same", "differ by 1")
-cor_length_unit <- 50
-
-# Iterate over tier diff dummies
-for (m in tier_diff) {
-  coef_val <- coefficients[paste("cor_lengths:", m,sep = "")]
-  print_coefficients(coef_val, m, tier_descr[match(m, tier_diff)], cor_length_unit)}
-```
-
-Next look at the models localcor_wave_mhhinc. If we look at all counties, only the interaction terms for wave_3:tier_diff_2 and local_corr:wave_3:tier_diff_2 are significant. If we look at urban counties, only the interaction terms for local_corr:wave_3 and local_corr:wave_2:tier_diff_1 are significant. 
-
-```{r}
-# print results for significant interaction terms for all counties
-coefficients <- coef(mhhinc_lm_models[[3]])
-
-coef_val <- coefficients["log(r_0_50):factor(wave)3:tier_diff_2"]
-coef <- coef_val + coefficients["log(r_0_50)"]
-cat("- Among all counties in wave 3 where the median household income tiers differ by 2 \n")
-cat("a 10 % increase in local correlation corresponds to a ", 
-        round(exp(coef * log(1.1))* 100 - 100, 2), "% change in cases in the following week\n\n", sep = "")
-```
-
-```{r}
-# print results for significant interaction terms for urban counties
-coefficients <- coef(mhhinc_lm_models[[7]])
-
-coef_val <- coefficients["log(r_0_50):factor(wave)2:tier_diff_1"]
-coef <- coef_val + coefficients["log(r_0_50)"]
-cat("- Among urban counties in wave 2 where the median household income tiers differ by 1 \n")
-cat("a 10 % increase in local correlation corresponds to a ", 
-        round(exp(coef * log(1.1))* 100 - 100, 2), "% change in cases in the following week\n\n", sep = "")
-```
-
-Lastly look at the models localcor_mhhinc. If we look at all counties, all three interaction terms are significant. If we look at urban counties, only the interaction terms for log(r_0_50)s:same_tier and log(r_0_50):tier_diff_1 are significant. 
-
-```{r}
-# print results for all counties 
-# Create function that prints results
-print_coefficients <- function(coef_val, tier_diff, tier_descr) {
-  if (!is.na(coef_val)) {
-    coef <- coef_val + coefficients["log(r_0_50)"]
-    cat("- Among all counties where the median household income tiers", tier_descr, "\n")
-    cat("a 10 % increase in local correlation corresponds to a ", 
-        round(exp(coef * log(1.1))* 100 - 100, 2), "% change in cases in the following week\n\n", sep = "")}}
-
-coefficients <- coef(mhhinc_lm_models[[4]])
-tier_diff <- c("same_tier", "tier_diff_1", "tier_diff_2")
-tier_descr <- c("are the same", "differ by 1", "differ by 2")
-
-# Iterate over tier diff dummies
-for (m in tier_diff) {
-  coef_val <- coefficients[paste("log(r_0_50):", m,sep = "")]
-  print_coefficients(coef_val, m, tier_descr[match(m, tier_diff)])}
-```
-```{r}
-# print results for all counties 
-# Create function that prints results
-print_coefficients <- function(coef_val, tier_diff, tier_descr) {
-  if (!is.na(coef_val)) {
-    coef <- coef_val + coefficients["log(r_0_50)"]
-    cat("- Among urban counties where the median household income tiers", tier_descr, "\n")
-    cat("a 10 % increase in local correlation corresponds to a ", 
-        round((exp(coef * log(1.1))* 100 - 100, 2), "% change in cases in the following week\n\n", sep = "")}}
-
-coefficients <- coef(mhhinc_lm_models[[8]])
-tier_diff <- c("same_tier", "tier_diff_1")
-tier_descr <- c("are the same", "differ by 1")
-
-# Iterate over tier diff dummies
-for (m in tier_diff) {
-  coef_val <- coefficients[paste("log(r_0_50):", m,sep = "")]
-  print_coefficients(coef_val, m, tier_descr[match(m, tier_diff)])}
-```
-
-
-
-
-
-
-## new result interpretations for mhhinc + wave models
-
-### Check conditions of Normality of Residuals, Homoskedasticity,Linearity , No Perfect Multicollinearity, Independence of Residuals
+## Check conditions of Normality of Residuals, Homoskedasticity,Linearity , No Perfect Multicollinearity, Independence of Residuals
 
 ```{r}
 for (lm_model in mhhinc_lm_models_train) {
@@ -1518,8 +1224,7 @@ vif(lm(log(next_week_marginal_cases) ~  cor_lengths + factor(wave) + factor(mhhi
 names(mhhinc_lm_models_train)
 ```
 
-## Print non-NA Significant Results
-
+## Interpretations
 ```{r}
 
 # Initialize values
@@ -1627,7 +1332,7 @@ Significant differential effects among "equality level." Spread is greater among
 
 
 
-# Eleanor: Mask + Wave Models (1 data set, 4 models, 2 tables, 2 models/table)
+# Mask + Wave Models
 
 ## Prepare Model Combinations
 
@@ -1770,8 +1475,6 @@ stargazer(
 )
 ```
 
-## Print Results 
-
 ## Check conditions of Normality of Residuals, Homoskedasticity,Linearity , No Perfect Multicollinearity, Independence of Residuals
 
 ```{r}
@@ -1798,7 +1501,7 @@ vif(lm(log(next_week_marginal_cases) ~  cor_lengths + factor(wave) + factor(mask
 ## Heteroskedasticity in all_localcor_mask_train
 ```
 
-## Print non-NA Significant Results
+### Interpretations
 
 ```{r}
 # Initialize values
@@ -1899,353 +1602,3 @@ for (model in 1:length(mask_lm_models_train)) {
 
 
 
-# \########################################## Old Stuff (Do new stuff above this)
-
-```{r}
-# Weekly Spatial Metrics with Poverty Columns
-poverty_weekly_spatial_metrics = read.csv("poverty_weekly_spatial_metrics.csv")
-
-# same data set but calculations from urban counties only (pop >250k)
-urban_poverty_weekly_spatial_metrics = read.csv("urban_poverty_weekly_spatial_metrics.csv")
-```
-
-Output: poverty_weekly_spatial_metrics - Weekly data set with
-corresponding covid cases, spatial correlations, and correlation
-lengths - 942 rows (weeks 9 - 165 x 6 poverty tiers) x 61 columns (date,
-cases, cor length, C(r), poverty dummies) - features: start date of
-week, total cases, marginal cases, next week's marginal cases, C(r) for
-distance intervals from [0,50] to [970,1000], correlation length, pov
-tier (1,1) dummy, pov tier (2,2) dummy, pov tier (3,3) dummy, pov tier
-(1,2) dummy, pov tier (1,3) dummy, pov tier (2,3) dummy
-
-## Model on entire data
-
-```{r}
-# Log-Linear Model (better)
-plot(weekly_spatial_metrics_waves$cor_lengths,log(weekly_spatial_metrics_waves$next_week_marginal_cases))
-plot(weekly_spatial_metrics_waves$r_0_50,log(weekly_spatial_metrics_waves$next_week_marginal_cases))
-
-plot(weekly_spatial_metrics_waves$r_0_50,weekly_spatial_metrics_waves$next_week_marginal_cases)
-
-# Log-Log Model (bad)
-plot(log(weekly_spatial_metrics_waves$cor_lengths),log(weekly_spatial_metrics_waves$next_week_marginal_cases))
-plot(log(weekly_spatial_metrics_waves$r_0_50),log(weekly_spatial_metrics_waves$next_week_marginal_cases))
-```
-
-```{r}
-# Regress next week's marginal cases on correlation length
-simple_model <- lm(log(weekly_spatial_metrics_waves$next_week_marginal_cases) ~ weekly_spatial_metrics_waves$cor_lengths, data = weekly_spatial_metrics_waves)
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(simple_model, type = "HC1")))
-robust_test <- coeftest(simple_model, vcov = vcovHC(simple_model, type = "HC1"))
-print(robust_test)
-
-# Regress next week's marginal cases on local correlation
-simple_model2 <- lm(log(weekly_spatial_metrics_waves$next_week_marginal_cases) ~ weekly_spatial_metrics_waves$r_0_50, data = weekly_spatial_metrics_waves)
-robust_se <- sqrt(diag(vcovHC(simple_model2, type = "HC1")))
-robust_test <- coeftest(simple_model2, vcov = vcovHC(simple_model2, type = "HC1"))
-print(robust_test)
-
-
-# Print Result
-paste("a 1 sd increase in correlation length (",cor_length_unit, " km) corresponds to a ", round(simple_model$coefficients[2]*cor_length_unit*100,2),"% change in cases in the following week", sep="")
-local_cor_unit = round(sd(weekly_spatial_metrics_waves$r_0_50),2)
-paste("a 1 sd increase in local correlation (",local_cor_unit, ") corresponds to a ", round(simple_model2$coefficients[2]*local_cor_unit*100,2),"% change in cases in the following week", sep="")
-```
-
-```{r}
-# For Urban counties
-urban_model <- lm(log(urban_weekly_spatial_metrics_waves$next_week_marginal_cases) ~ urban_weekly_spatial_metrics_waves$cor_lengths, data = urban_weekly_spatial_metrics_waves)
-robust_se <- sqrt(diag(vcovHC(urban_model, type = "HC1")))
-robust_test <- coeftest(urban_model, vcov = vcovHC(urban_model, type = "HC1"))
-print(robust_test)
-
-urban_model <- lm(log(urban_weekly_spatial_metrics_waves$next_week_marginal_cases) ~ r_0_50, data = urban_weekly_spatial_metrics_waves)
-robust_se <- sqrt(diag(vcovHC(urban_model, type = "HC1")))
-robust_test <- coeftest(urban_model, vcov = vcovHC(urban_model, type = "HC1"))
-print(robust_test)
-
-# Print Result
-cor_length_unit = 1
-paste("a",cor_length_unit, "km increase in correlation length corresponds to a ", round(urban_model$coefficients[2]*cor_length_unit*100,2),"% change in cases in the following week among urban counties")
-cor_length_unit = 50
-paste("a",cor_length_unit, "km increase in correlation length corresponds to a ", round(urban_model$coefficients[2]*cor_length_unit*100,2),"% change in cases in the following week among urban counties")
-local_cor_unit = 10
-paste("a",local_cor_unit, "% increase in correlation length corresponds to a ", round(exp(urban_model$coefficients[2]*cor_length_unit*log(1.1)*100-100,2),"% change in cases in the following week among urban counties")
-```
-
-## Model based on median household income
-
-```{r}
-# log-linear model
-# mhhinc tier difference dummies, urban counties
-urban_model <- lm(log(next_week_marginal_cases) ~ cor_lengths +
-                        same_tier + tier_diff_1 + tier_diff_2 +same_tier*cor_lengths +
-                          tier_diff_1*cor_lengths +tier_diff_2*cor_lengths, 
-                     data = urban_mhhinc_weekly_spatial_metrics)
-robust_se <- sqrt(diag(vcovHC(urban_model, type = "HC1")))
-robust_test <- coeftest(urban_model, vcov = vcovHC(urban_model, type = "HC1"))
-print(robust_test)
-
-cor_length_unit = 50
-paste("a",cor_length_unit, "km increase in correlation length corresponds to a ", round((urban_model$coef[2] + urban_model$coef[6])*cor_length_unit*100,2),"% change in cases in the following week among urban counties in the same tier of mhhinc")
-paste("a",cor_length_unit, "km increase in correlation length corresponds to a ", round((urban_model$coef[2] + urban_model$coef[7])*cor_length_unit*100,2),"% change in cases in the following week between urban counties of mhhinc tiers that differ by 1")
-paste("a",cor_length_unit, "km increase in correlation length corresponds to a ", round((urban_model$coef[2] + urban_model$coef[8])*cor_length_unit*100,2),"% change in cases in the following week between urban counties of mhhinc tiers that differ by 2")
-paste("a",cor_length_unit, "km increase in correlation length corresponds to a ", round(urban_model$coef[2]*cor_length_unit*100,2),"% change in cases in the following week between urban counties of tier 1 and tier 4 (diff 3)")
-```
-
-```{r}
-# map factor levels to tier levels 
-values <- c(1, 2, 3, 4, 6, 7, 8, 11, 12, 16)
-tiers <- c("tier_1_1", "tier_1_2", "tier_1_3", "tier_1_4",
-           "tier_2_2", "tier_2_3", "tier_2_4",
-           "tier_3_3", "tier_3_4",
-           "tier_4_4")
-mhhinc_factor_tiers <- tibble(Factor = values, Tier = tiers)
-print(mhhinc_factor_tiers)
-```
-
-```{r}
-# full model 
-full_mhhinc_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths) +
-                        factor(mhhinc_tier), 
-                     data = mhhinc_weekly_spatial_metrics)
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(full_mhhinc_model, type = "HC1")))
-
-robust_test <- coeftest(full_mhhinc_model, vcov = vcovHC(full_mhhinc_model, type = "HC1"))
-print(robust_test)
-```
-
-```{r}
-# full model with interaction terms 
-full_mhhinc_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths) *
-                        factor(mhhinc_tier), 
-                     data = mhhinc_weekly_spatial_metrics)
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(full_mhhinc_model, type = "HC1")))
-
-robust_test <- coeftest(full_mhhinc_model, vcov = vcovHC(full_mhhinc_model, type = "HC1"))
-print(robust_test)
-```
-
-```{r}
-# split into "simple model" for subsetted data 
-
-for(i in 1:nrow(mhhinc_factor_tiers)) {
-  # Dynamic filtering based on tier
-  tier_value <- mhhinc_factor_tiers$Tier[i]
-  #filter_condition <- paste0(tier_value, " == 1")
-  mhhinc_weekly_spatial_metrics_subset <- mhhinc_weekly_spatial_metrics %>%
-    filter(!!rlang::sym(tier_value) == 1)
-  
-  # Linear model
-  mhhinc_simple_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), 
-                           data = mhhinc_weekly_spatial_metrics_subset)
-  
-  # Perform hypothesis tests with robust standard errors for heteroskedasticity
-  robust_se <- sqrt(diag(vcovHC(mhhinc_simple_model, type = "HC1")))
-  
-  robust_test <- coeftest(mhhinc_simple_model, vcov = vcovHC(mhhinc_simple_model, type = "HC1"))
-  print(robust_test)
-  # Print result
-  result <- paste("A 10% increase in correlation length corresponds to a ", 
-                  round(exp(mhhinc_simple_model$coefficients[2] * log(1.1))* 100 - 100,2),
-                  "% change in cases in the following week for counties in ", tier_value, "mhhinc.")
-  print(result)
-}
-```
-
-## Model based on poverty tiers
-
-```{r}
-# full model 
-full_pov_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths) + 
-                       tier_11 + tier_22 + tier_33 +tier_12 + tier_13, 
-                     data = poverty_weekly_spatial_metrics)
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(full_pov_model, type = "HC1")))
-
-robust_test <- coeftest(full_pov_model, vcov = vcovHC(full_pov_model, type = "HC1"))
-print(robust_test)
-```
-
-```{r}
-# full model with interaction terms 
-full_pov_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths) + 
-                       tier_11  + tier_22 + tier_33 + tier_12 + tier_13 + 
-                       log(cor_lengths) * tier_11 + log(cor_lengths) * tier_22 + log(cor_lengths) * tier_33 
-                     + log(cor_lengths) * tier_12 + log(cor_lengths) * tier_13, 
-                     data = poverty_weekly_spatial_metrics)
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(full_pov_model, type = "HC1")))
-
-robust_test <- coeftest(full_pov_model, vcov = vcovHC(full_pov_model, type = "HC1"))
-print(robust_test)
-```
-
-```{r}
-# split into a "simple model" for subsetted data 
-
-# vector of tier names
-pov_tiers <- c("tier_11", "tier_22", "tier_33", "tier_12", "tier_13", "tier_23")
-for(tier_value in pov_tiers) {
-  # Dynamic filtering based on the current tier in the loop
-  pov_weekly_spatial_metrics_subset <- poverty_weekly_spatial_metrics %>%
-    filter(!!rlang::sym(tier_value) == 1)
-  
-  # Linear model
-  pov_simple_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), 
-                            data = pov_weekly_spatial_metrics_subset)
-  
-  # Perform hypothesis tests with robust standard errors for heteroskedasticity
-  robust_test <- coeftest(pov_simple_model, vcov = vcovHC(pov_simple_model, type = "HC1"))
-  print(robust_test)
-  
-  # Print result
-  result <- paste("A 10% increase in correlation length corresponds to a ", 
-                  round(exp(pov_simple_model$coefficients[2]* log(1.1))* 100 - 100,2),
-                  "% change in cases in the following week for counties in ", tier_value, "for poverty.")
-  print(result)
-}
-
-```
-
-## Model based on regions
-
-```{r}
-# full model without interactions
-region_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths) + northeast + midwest + south, data = regional_weekly_spatial_metrics)
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(region_model, type = "HC1")))
-
-robust_test <- coeftest(region_model, vcov = vcovHC(region_model, type = "HC1"))
-print(robust_test)
-
-# full model with interactions
-region_model_int <- lm(log(next_week_marginal_cases) ~ log(cor_lengths) + northeast + northeast*log(cor_lengths) + midwest + midwest*log(cor_lengths) + south + south*log(cor_lengths), data = regional_weekly_spatial_metrics)
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se_int <- sqrt(diag(vcovHC(region_model_int, type = "HC1")))
-
-robust_test_int <- coeftest(region_model_int, vcov = vcovHC(region_model_int, type = "HC1"))
-print(robust_test_int)
-```
-
-## Split into a "simple model" for subsetted data
-
-```{r}
-# simple model for northeast
-ne_weekly_spatial_metrics <- regional_weekly_spatial_metrics %>% filter(northeast == 1)
-
-northeast_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), 
-                         data = ne_weekly_spatial_metrics)
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(northeast_model, type = "HC1")))
-
-robust_test <- coeftest(northeast_model, vcov = vcovHC(northeast_model, type = "HC1"))
-print(robust_test)
-# Print Result
-paste("a 10% increase in correlation length in the Northeast region corresponds to a ", round(exp(northeast_model$coefficients[2]* log(1.1))* 100 - 100,2),"% change in cases in the following week")
-```
-
-```{r}
-# simple model for midwest
-mw_weekly_spatial_metrics <- regional_weekly_spatial_metrics %>% filter(midwest == 1)
-
-midwest_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), 
-                         data = mw_weekly_spatial_metrics)
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(midwest_model, type = "HC1")))
-
-robust_test <- coeftest(midwest_model, vcov = vcovHC(midwest_model, type = "HC1"))
-print(robust_test)
-# Print Result
-paste("a 10% increase in correlation length in the MidWest region corresponds to a ", round(exp(midwest_model$coefficients[2]* log(1.1))* 100 - 100,2),"% change in cases in the following week")
-```
-
-```{r}
-# simple model for south
-s_weekly_spatial_metrics <- regional_weekly_spatial_metrics %>% filter(south == 1)
-
-south_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), 
-                         data = s_weekly_spatial_metrics)
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(south_model, type = "HC1")))
-
-robust_test <- coeftest(south_model, vcov = vcovHC(south_model, type = "HC1"))
-print(robust_test)
-# Print Result
-paste("a 10% increase in correlation length in the South region corresponds to a ", round(exp(south_model$coefficients[2]* log(1.1))* 100 - 100,2),"% change in cases in the following week")
-```
-
-```{r}
-# simple model for west
-w_weekly_spatial_metrics <- regional_weekly_spatial_metrics %>% filter(region == 'West')
-
-west_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), 
-                         data = w_weekly_spatial_metrics)
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(west_model, type = "HC1")))
-
-robust_test <- coeftest(west_model, vcov = vcovHC(west_model, type = "HC1"))
-print(robust_test)
-# Print Result
-paste("a 10% increase in correlation length in the West region corresponds to a ", round(exp(west_model$coefficients[2]* log(1.1))* 100 - 100,2),"% change in cases in the following week")
-```
-
-## Model based on time waves
-
-```{r}
-# Full Wave Model (w dummy variables)
-full_wave_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths) + wave_1 + wave_2, data = weekly_spatial_metrics_waves)
-
-robust_se <- sqrt(diag(vcovHC(full_wave_model, type = "HC1")))
-
-robust_test <- coeftest(full_wave_model, vcov = vcovHC(full_wave_model, type = "HC1"))
-print(robust_test)
-```
-
-```{r}
-# Wave 1 Simple Model (weeks 9-47: 2020-03-28 - 2020-12-19)
-wave1_data <- weekly_spatial_metrics_waves %>% filter(X >= 1 & X <= 39)
-
-wave1_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), data = wave1_data)
-
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(wave1_model, type = "HC1")))
-
-robust_test <- coeftest(wave1_model, vcov = vcovHC(wave1_model, type = "HC1"))
-print(robust_test)
-
-paste("a 10% increase in correlation length corresponds to a ", round(exp(wave1_model$coefficients[2]* log(1.1))* 100 - 100,2),"% change in cases in the following week")
-```
-
-```{r}
-# Wave 2 Simple Model (weeks 48-97: 2020-12-26 - 2021-12-04)
-wave2_data <- weekly_spatial_metrics_waves %>% filter(X >= 40 & X <= 89)
-
-wave2_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), data = wave2_data)
-
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(wave2_model, type = "HC1")))
-
-robust_test <- coeftest(wave2_model, vcov = vcovHC(wave2_model, type = "HC1"))
-print(robust_test)
-
-paste("a 10% increase in correlation length corresponds to a ", round(exp(wave2_model$coefficients[2]*log(1.1))* 100 - 100,2),"% change in cases in the following week")
-```
-
-```{r}
-# Wave 3 Simple model (weeks 98-160: 2021-12-11 - 2023-03-25)
-wave3_data <- weekly_spatial_metrics_waves %>% filter(X >= 90 & X <= 157)  
-
-wave3_model <- lm(log(next_week_marginal_cases) ~ log(cor_lengths), data = wave3_data)
-
-# Perform hypothesis tests with robust standard errors for heteroskedasticity
-robust_se <- sqrt(diag(vcovHC(wave3_model, type = "HC1")))
-
-robust_test <- coeftest(wave3_model, vcov = vcovHC(wave3_model, type = "HC1"))
-print(robust_test)
-
-paste("a 10% increase in correlation length corresponds to a ", round(exp(wave3_model$coefficients[2]*log(1.1))*100-100),2),"% change in cases in the following week")
-```
