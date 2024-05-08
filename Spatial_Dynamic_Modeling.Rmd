@@ -159,7 +159,7 @@ for (m in 1:length(simple_lm_models_train)){
 # (1) is all
 # (2) is urban
 stargazer(
-  c(simple_lm_models_train[1], simple_lm_models_train[3]),
+  c(simple_lm_models_train[1], simple_lm_models_train[3], simple_lm_models_train[2], simple_lm_models_train[4]),
   type = 'text', 
   title = "Regression of Covid Cases on Correlation Length"
 )
